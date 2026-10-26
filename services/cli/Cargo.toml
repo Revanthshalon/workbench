@@ -1,5 +1,5 @@
 [package]
-name = "cli"
+name = "workbench-cli"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,6 +10,8 @@ name = "workbench-cli"
 path = "src/main.rs"
 
 [dependencies]
+engine = { workspace = true }
+clap = { workspace = true }
 
 [lints]
 workspace = true

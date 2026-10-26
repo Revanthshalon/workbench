@@ -1,14 +1,13 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! Core of Workbench: domain types, ports and use cases.
+//!
+//! Does no I/O. Adapters in the services implement the ports defined here.
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+mod domain;
+mod error;
+mod init;
+mod ports;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use domain::Platform;
+pub use error::Error;
+pub use init::init;
+pub use ports::ConfigStore;
