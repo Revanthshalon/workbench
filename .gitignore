@@ -1,0 +1,26 @@
+# Rust build output
+/target/
+**/*.rs.bk
+
+# Local secrets and environment (commit only the example)
+.env
+.env.*
+!.env.example
+
+# Memgraph bind mount: data, logs, model cache
+/docker/
+
+# Logs
+*.log
+
+# Local code-intelligence indexes / tool caches
+.codegraph/
+.serena/
+.superpowers/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
