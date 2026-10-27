@@ -6,7 +6,7 @@ use std::{
 
 use engine::{ConfigStore, Error};
 
-/// Stores the config as `<dir>/.workbench-cli/config.yml`.
+/// Stores the config as `<dir>/.workbench/config.yml`.
 #[derive(Debug)]
 pub struct DirFileStore {
     dir: PathBuf,
@@ -20,7 +20,7 @@ impl DirFileStore {
 
 impl ConfigStore for DirFileStore {
     fn create(&self) -> Result<PathBuf, Error> {
-        let dir = self.dir.join(".workbench-cli");
+        let dir = self.dir.join(".workbench");
         fs::create_dir_all(&dir).map_err(|e| Error::Storage(e.to_string()))?;
         let path = dir.join("config.yml");
         OpenOptions::new()

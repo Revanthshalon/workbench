@@ -8,7 +8,7 @@ Command-line companion to [`workbench-mcp`](../mcp/README.md). Binary: `workbenc
 workbench-cli init [--platform <PLATFORM>[,<PLATFORM>...]] [--out <DIR>]
 ```
 
-Creates `<DIR>/.workbench-cli/config.yml`, empty for now. It refuses to overwrite an existing file.
+Creates `<DIR>/.workbench/config.yml`, empty for now. It refuses to overwrite an existing file.
 
 | Flag | Values | Default |
 |------|--------|---------|

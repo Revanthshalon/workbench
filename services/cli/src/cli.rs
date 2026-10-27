@@ -21,7 +21,7 @@ pub enum Command {
         /// Platforms to configure, comma-separated [default: copilot-cli,claude-code].
         #[arg(long, value_enum, value_delimiter = ',')]
         platform: Vec<PlatformArg>,
-        /// Directory to create `.workbench-cli/` in.
+        /// Directory to create `.workbench/` in.
         #[arg(long, value_name = "DIR", default_value = ".")]
         out: PathBuf,
     },
