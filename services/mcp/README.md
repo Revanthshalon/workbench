@@ -6,12 +6,12 @@ The workbench MCP server. Binary: `workbench-mcp`.
 workbench-mcp --mode <mode>
 ```
 
-`--mode` picks one bundle of tools, prompts and instructions per server process. To use several modes, register the server several times.
+`--mode` picks one bundle of tools, prompts and instructions per server process; the default is `developer-support`, which needs no secrets or production access. `operational-support` must be named explicitly and refuses to start without a valid server config. To use several modes, register the server several times.
 
 | Mode | For | Status |
 |------|-----|--------|
-| `operational-support` | Incidents: logs → code flow → root cause → fix | MVP (default) |
-| `developer-support` | Context for code changes from the service graph, combined with your LSP setup, context files, prompts and hooks | planned |
+| `operational-support` | Incidents: logs → code flow → root cause → fix | MVP |
+| `developer-support` | Context for code changes from the service graph, combined with your LSP setup, context files, prompts and hooks | planned (default) |
 | `operational-onboarding` | Do's and don'ts for operating the system, from the graph and your runbooks; no production access | planned |
 | `developer-onboarding` | A fast guided tour of the codebase | planned |
 

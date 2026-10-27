@@ -15,12 +15,12 @@ An MCP server (and companion CLI) that turns your services, logs, config and run
 
 ## Modes
 
-`workbench-mcp --mode <mode>` picks one bundle of tools, prompts and instructions per server process. To use several modes, register the server several times.
+`workbench-mcp --mode <mode>` picks one bundle of tools, prompts and instructions per server process; the default is `developer-support`. To use several modes, register the server several times.
 
 | Mode | For | Status |
 |------|-----|--------|
-| `operational-support` | Incidents: logs → code flow → root cause → fix | MVP (default) |
-| `developer-support` | Context for code changes from the service graph, combined with your LSP setup, context files, prompts and hooks | planned |
+| `operational-support` | Incidents: logs → code flow → root cause → fix | MVP |
+| `developer-support` | Context for code changes from the service graph, combined with your LSP setup, context files, prompts and hooks | planned (default) |
 | `operational-onboarding` | Do's and don'ts for operating the system, from the graph and your runbooks; no production access | planned |
 | `developer-onboarding` | A fast guided tour of the codebase | planned |
 
