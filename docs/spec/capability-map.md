@@ -2,7 +2,7 @@
 
 Status: **approved.** Module specs follow in build order, one at a time, each reviewed before the next.
 
-Scope: ship the `operational-support` mode of `workbench-mcp` completely, plus `workbench-cli` workspace setup. The other modes (`developer-support`, `operational-onboarding`, `developer-onboarding`) are out of scope here, but the shared modules below are designed so those modes can reuse them.
+Scope: ship the `operational-support` mode of `workbench-mcp` completely, plus `workbench` workspace setup. The other modes (`developer-support`, `operational-onboarding`, `developer-onboarding`) are out of scope here, but the shared modules below are designed so those modes can reuse them.
 
 ## Decisions this map rests on
 
@@ -10,18 +10,19 @@ Scope: ship the `operational-support` mode of `workbench-mcp` completely, plus `
 - MCP over stdio. One process per mode.
 - **The default mode is `developer-support`.** `workbench-mcp --mode <mode>` picks a mode; without it the server runs `developer-support`, which needs no secrets and no production access. Operational access is always opt-in by naming `operational-support`.
 - **Each mode loads only what it needs.** `developer-support` needs no secrets and no production access, only the graph and LSP. `operational-support` uses everything `developer-support` does (the graph and LSP, to speed up analysis and traversal) *plus* the operational modules and secrets, and requires the server config to exist and be valid *before* the server starts; if not, it exits with an error that says so.
-- **Two configurations in the same directory.** The *workspace config* (`.workbench/config.yml`, written by `workbench-cli`). The whole `.workbench/` directory holds the configuration for the CLI, the MCP server and the memories, and is git-ignored entirely. lists the folders of a project, mono repo or multiple repos, with each one's language and dependency manager. The *server config* (`.workbench/mcp/config.yml`) holds the contexts and their credentials. `workbench-cli init` generates the server config as a template (contexts, `default_context`, placeholders for credentials; never overwrites an existing one) and adds `.workbench/` to the project's `.gitignore`. A template with unfilled placeholders is not valid, so `operational-support` still refuses to start until it is completed.
+- **Two configurations in the same directory.** The *workspace config* (`.workbench/config.yml`, written by `workbench`). The whole `.workbench/` directory holds the configuration for the CLI, the MCP server and the memories, and is git-ignored entirely. lists the folders of a project, mono repo or multiple repos, with each one's language and dependency manager. The *server config* (`.workbench/mcp/config.yml`) holds the contexts and their credentials. `workbench init` generates the server config as a template (contexts, `default_context`, placeholders for credentials; never overwrites an existing one) and adds `.workbench/` to the project's `.gitignore`. A template with unfilled placeholders is not valid, so `operational-support` still refuses to start until it is completed.
 - **Secrets:** may be inline in the server config; environment variables override inline values. They are held as `secrecy` secrets from the moment they are read, and never printed, logged or returned by a tool. They are exposed only to open a connection.
 - **Contexts** are `production`, `staging` and `testing`. All are **read-only**. Each has a code branch and connections to Kubernetes (`kubectl`), PostgreSQL, Redis and Kafka, with credentials.
 - **Switching** contexts happens only on an explicit instruction from the user; the agent never switches on its own. One server process holds all contexts.
 - **A workspace is a set of projects.** Each project is an entry in the workspace config with a stable id, a path, a language, a dependency manager and, where needed, a virtual environment or activation command. Projects can be queried together: graph queries and search span every project by default and can be narrowed to one or several. LSP is activated per project and used at workspace level: a request about a file or symbol is routed to the language server of the project that owns it.
 - **Per-project memory:** `.workbench/memory/<project-id>/` exists for every project in the workspace, and each starts with an `INIT-MEMORY.md` holding the project's initial context. Adding a project to the workspace creates its folder and file.
+- **The CLI also builds the AST structures** (`workbench index`) and **updates them incrementally**: only files that changed are re-parsed, never the whole codebase, and what depends on them is re-linked. The MCP `reindex` tool uses the same incremental path.
 - The **service graph** is built from the workspace projects with tree-sitter grammars per language. Cross-service connections come from parsing Dockerfiles, Docker Compose files and shared-library APIs.
 - **Languages and files:** Python (poetry, uv); Angular with HTML, CSS, SCSS and TypeScript (Vite); YAML; Dockerfile; Docker Compose.
-- The first **log source** is `kubectl`.
+- The first **log source** is `kubectl` with configurable namespace.
 - **Storage is configurable:** SQLite or Memgraph.
 - Every tool call is recorded in an **audit log**, retrievable per session. Nothing is scrubbed by pattern; credentials never reach the log because they are never exposed.
-- **LSP at project level and workspace level** is in the first release, in two parts: `workbench-mcp` runs language servers for the workspace's languages and exposes them as tools, and `workbench-cli init <platform>` configures the AI platform's own LSP integration. Both honour per-project settings such as a Python virtual environment, and each project's language server starts only when it is needed.
+- **LSP at project level and workspace level** is in the first release, in two parts: `workbench-mcp` runs language servers for the workspace's languages and exposes them as tools, and `workbench init <platform>` configures the AI platform's own LSP integration. Both honour per-project settings such as a Python virtual environment, and each project's language server starts only when it is needed.
 - **Resolved execution flows are remembered**, only once you confirm the fix, and combined into a complete orchestration flow of the system. They are kept both as local files under `.workbench/flows/` and in the storage backend. This is part of the first release.
 - **Tools are not defined yet.** Tool names below are candidates from the product brief; each module spec defines its tools.
 
@@ -30,13 +31,14 @@ Scope: ship the `operational-support` mode of `workbench-mcp` completely, plus `
 | Module id | Responsibility | Tool candidates / artifacts | Depends on |
 |---|---|---|---|
 | `workspace` | Workspace config model: projects with id, path, language, dependency manager and, where needed, the virtual environment, interpreter or activation command; project scoping for queries; the per-project memory folder layout (`memory/<project-id>/INIT-MEMORY.md`); read and write | `.workbench/config.yml` format, `.workbench/memory/` layout | — |
-| `cli` | `workbench-cli`: create and manage the workspace config; generate the server config template; add projects to the workspace (creating each project's memory folder and `INIT-MEMORY.md`); add `.workbench/` to the project's `.gitignore` | `workbench-cli init` (**built**, config still empty) | `workspace` |
+| `cli` | `workbench`: create and manage the workspace config; generate the server config template; add projects to the workspace (creating each project's memory folder and `INIT-MEMORY.md`); add `.workbench/` to the project's `.gitignore` | `workbench init` (**built**, config still empty) | `workspace` |
 | `core` | MCP server skeleton, required `--mode`, tool and prompt registry, server config loading (inline values, environment overrides, `secrecy`), start-up validation | `workbench-mcp --mode` | `workspace` |
 | `contexts` | `production`, `staging`, `testing`: read-only, each with code branch and connections for kubectl, PostgreSQL, Redis and Kafka; one active at a time, switched only on explicit user instruction | context list, switch, current | `core` |
 | `storage` | Persistence ports with SQLite and Memgraph adapters, chosen by config | — | `core` |
 | `audit` | Append-only record of every tool call, with its session and context | session log retrieval | `core`, `storage` |
-| `lsp` | Catalog of language servers per language (default for Python: basedpyright); activates one per project on demand and routes workspace-level requests to the owning project's server; venv-aware and dependency-manager-aware (poetry, uv, Vite), and exposes them as tools | `lsp` (to be defined) | `workspace`, `core` |
-| `platform-setup` | `workbench-cli init <platform>` configures the AI platform's own LSP integration (Copilot CLI, Claude Code, Codex) from the workspace config; configurable per project and per folder, with an activation command and the folder's dependency manager | `workbench-cli init --platform …` (extended) | `cli`, `lsp` |
+| `lsp` | Catalog of language servers per language (default for Python: basedpyright). Two entry points on one shared launcher: `workbench lsp run <project-id>` runs the project's activation command (venv, `poetry run`, `uv run`, Vite project) and execs its language server over stdio; `workbench-mcp` starts the same servers lazily and exposes them as tools. Workspace-level requests are routed to the owning project's server | `workbench lsp run <project-id>`; MCP `lsp` tools (to be defined) | `workspace`, `core` |
+| `platform-setup` | `workbench init <platform>` configures the AI platform's own LSP integration (Copilot CLI, Claude Code, Codex) from the workspace config, pointing each project's entry at `workbench lsp run <project-id>`; configurable per project and per folder, with an activation command and the folder's dependency manager | `workbench init --platform …` (extended) | `cli`, `lsp` |
+| `index` | `workbench index`: builds the per-file AST data and updates it incrementally from changes (content hashes, with `git diff` as a shortcut); runs on demand, from git hooks or from a file watcher | `workbench index [--project …] [--changed]` | `cli`, `graph` |
 | `graph` | Tree-sitter parsing (Python, TypeScript, HTML, CSS, SCSS, YAML, Dockerfile, Compose); Dockerfile, Compose and shared-lib API cross-service links; service boundaries with evidence; queries across all projects or a chosen subset; indexing | `service_map`, `contract`, `find_symbol`, `code_context`, `trace_flow`, `read_file`, `graph_query`, `reindex` (each accepting a project scope, default all) | `workspace`, `storage` |
 | `semantic-layer` | Remembered knowledge and code search across projects, seeded from each project's `INIT-MEMORY.md` | `remember`, `revise`, `retract`, `recall`, `knowledge_gaps`, `search_code` | `storage`, `graph` |
 | `operations` | Service logs, runtime and config in the active context; first adapter is `kubectl` | `fetch_logs`, `match_log`, `analyze_logs`, `compose_status`, `k8s_status`, `service_config`, `check_config` | `contexts`, `audit`, `graph`, `lsp` |
@@ -53,11 +55,12 @@ workspace → cli, core → contexts, storage, lsp → audit → graph
           → semantic-layer, operations, data → execution-flow → flow-memory, incidents → agent-prompts
 
 platform-setup: any time after lsp and cli
+index: any time after graph and cli (the incremental logic itself lives in graph)
 ```
 
 ## Shared with the other modes
 
-- **Used by `developer-support`**, the default mode (no secrets, no production access): `workspace`, `core`, `storage`, `graph`, `semantic-layer`, `lsp`, and `platform-setup` on the CLI side. It must start without a server config.
+- **Used by `developer-support`**, the default mode (no secrets, no production access): `workspace`, `core`, `storage`, `graph`, `semantic-layer`, `lsp`, and `platform-setup` and `index` on the CLI side. It must start without a server config.
 - **Reused by the onboarding modes:** `graph`, `semantic-layer`, `lsp`, and the read paths of `incidents` and `flow-memory`.
 - **`operational-support` uses all of the above** (graph, semantic layer and LSP, for faster analysis and traversal) **plus** the operational-only modules: `contexts`, `audit`, `operations`, `data`, `execution-flow`, `flow-memory`, `incidents`, `agent-prompts`.
 
@@ -70,6 +73,7 @@ platform-setup: any time after lsp and cli
 - The agent never switches context unless the user explicitly instructs it; the `contexts` spec defines how the server checks that.
 - Read-only is an invariant of every context, not a production special case. `operations` and `data` specs must say how it is enforced (for example a SQL allowlist, or a read-only role) and test it.
 - `storage` exposes ports; `graph`, `semantic-layer`, `audit`, `flow-memory` and `incidents` do not know whether the backend is SQLite or Memgraph.
+- Incremental indexing lives in `graph` and runs through `engine` ports, so `workbench index` and the MCP `reindex` tool share one code path. Parsed data is keyed by project and file content hash; an unchanged file is never parsed again. The CLI and the server may touch the same storage, so the `storage` spec must define safe concurrent access (for example SQLite in WAL mode).
 - `graph` owns what a "service boundary with evidence" is; `operations`, `execution-flow` and `semantic-layer` consume it.
 - `audit` records every tool call with its session and the active context. Retrieval is per session. The session boundary is defined in its spec.
 - `flow-memory` builds on the `audit` trail of a session and on `execution-flow` results; it does not call production systems itself. It saves a flow only after the user confirms the fix.
@@ -78,7 +82,7 @@ platform-setup: any time after lsp and cli
 
 ## My calls (change any)
 
-- Server config path `.workbench/mcp/config.yml`, with the `.gitignore` (confirmed). `workbench-cli init` auto-generates the server config as a template (confirmed).
+- Server config path `.workbench/mcp/config.yml`, with the `.gitignore` (confirmed). `workbench init` auto-generates the server config as a template (confirmed).
 - The audit log lives in the configured storage backend (confirmed).
 - No pattern-based redaction: `secrecy` plus never exposing a value is the whole mechanism (confirmed).
 - The server config names a required `default_context`, so there is no guessing at start-up.
@@ -87,11 +91,11 @@ platform-setup: any time after lsp and cli
 - Flow memory: the storage backend is the working store, used to query and combine flows. When you confirm a fix, one file per flow is also written to `.workbench/flows/` and the combined orchestration flow is regenerated there. The whole `.workbench/` directory is git-ignored (confirmed), so the files stay local. Sharing flows across a team therefore depends on a shared backend, such as a shared Memgraph.
 - Language servers: `basedpyright` is the default for Python. The other languages (Angular and TypeScript, HTML, CSS, SCSS, YAML, Dockerfile, Compose) are chosen in `SPEC-lsp.md`.
 - Launching a language server takes the folder's dependency manager into account: the workspace config says how to activate the environment (for Python, a venv path, or `poetry run` or `uv run`; for Angular, the Vite project's `node_modules`).
-- Platform LSP config is written by `workbench-cli init <platform>` and is configurable per project and per folder, with an activation command. The exact file format per platform is decided in `SPEC-platform-setup.md`.
+- Platform LSP config is written by `workbench init <platform>` and is configurable per project and per folder, with an activation command. The exact file format per platform is decided in `SPEC-platform-setup.md`.
 - The memory folder is `.workbench/memory/` (you wrote `.workspace/memory`; I read it as the same directory as before).
 - `INIT-MEMORY.md` for a new project is seeded from context the project already has (for example its README, `CLAUDE.md` or `AGENTS.md`) and falls back to an empty template. Which files count is decided in `SPEC-workspace.md`.
-- The whole `.workbench/` directory is git-ignored (confirmed), including `config.yml` and `memory/`. To share the memories later, un-ignore `.workbench/memory/` in the project's `.gitignore`. Teammates create their own workspace config with `workbench-cli`.
-- The directory is renamed from `.workbench-cli/` to `.workbench/` (confirmed), since it holds CLI, MCP and memory data. The binary stays `workbench-cli`.
+- The whole `.workbench/` directory is git-ignored (confirmed), including `config.yml` and `memory/`. To share the memories later, un-ignore `.workbench/memory/` in the project's `.gitignore`. Teammates create their own workspace config with `workbench`.
+- The directory is renamed from `.workbench-cli/` to `.workbench/` (confirmed), since it holds CLI, MCP and memory data. The binary stays `workbench`.
 - The environment variable naming convention is decided in `SPEC-core.md`.
 
 ## Open questions

@@ -10,7 +10,7 @@ An MCP server (and companion CLI) that turns your services, logs, config and run
 |------|----------------|---------|
 | [`lib/engine`](lib/engine/README.md) | `engine` | Core: domain, ports, use cases |
 | [`services/mcp`](services/mcp/README.md) | `workbench-mcp` | The MCP server |
-| [`services/cli`](services/cli/README.md) | `workbench-cli` | Command-line companion (`init`) |
+| [`services/cli`](services/cli/README.md) | `workbench` | Command-line companion (`init`) |
 | [`docs`](docs/README.md) | | ADRs, HLD, LLD, specs |
 
 ## Modes
@@ -46,5 +46,5 @@ Requires Rust 1.99.1+ (edition 2024; see `rust-toolchain.toml`).
 ```sh
 cargo build --workspace
 cargo clippy --workspace
-cargo run -p workbench-cli -- init --out ./tmp   # creates ./tmp/.workbench/config.yml
+cargo run -p workbench -- init --out ./tmp   # creates ./tmp/.workbench/config.yml
 ```

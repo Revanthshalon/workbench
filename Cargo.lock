@@ -118,10 +118,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
-name = "mcp"
-version = "1.0.0"
-
-[[package]]
 name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -210,9 +206,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "workbench-cli"
+name = "workbench"
 version = "1.0.0"
 dependencies = [
  "clap",
  "engine",
 ]
+
+[[package]]
+name = "workbench-mcp"
+version = "1.0.0"

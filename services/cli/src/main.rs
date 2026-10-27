@@ -1,4 +1,4 @@
-//! `workbench-cli`: command-line companion to `workbench-mcp`.
+//! `workbench`: command-line companion to `workbench-mcp`.
 
 use std::process::ExitCode;
 
