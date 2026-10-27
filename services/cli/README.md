@@ -1,11 +1,11 @@
 # Workbench-cli
 
-Command-line companion to [`workbench-mcp`](../mcp/README.md). Binary: `workbench-cli`.
+Command-line companion to [`workbench-mcp`](../mcp/README.md). Binary: `workbench`.
 
 ## Usage
 
 ```sh
-workbench-cli init [--platform <PLATFORM>[,<PLATFORM>...]] [--out <DIR>]
+workbench init [--platform <PLATFORM>[,<PLATFORM>...]] [--out <DIR>]
 ```
 
 Creates `<DIR>/.workbench/config.yml`, empty for now. It refuses to overwrite an existing file.
@@ -16,7 +16,7 @@ Creates `<DIR>/.workbench/config.yml`, empty for now. It refuses to overwrite an
 | `--out` | A directory | `.` (current directory) |
 
 ```sh
-workbench-cli init --platform copilot-cli,claude-code --out ~/work/my-service
+workbench init --platform copilot-cli,claude-code --out ~/work/my-service
 ```
 
 ## Structure

@@ -1,12 +1,12 @@
 [package]
-name = "workbench-cli"
+name = "workbench"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
 [[bin]]
-name = "workbench-cli"
+name = "workbench"
 path = "src/main.rs"
 
 [dependencies]
