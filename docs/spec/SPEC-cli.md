@@ -1,13 +1,13 @@
 # Spec: cli
 
-Module `cli` from the [capability map](capability-map.md). Status: **approved.**
+Module `cli` from the [capability map](capability-map.md). Status: **draft (amended), awaiting review.** Amended after approval to add the `mcp` command group (one binary, background server).
 
-Depends on [`workspace`](SPEC-workspace.md) (approved). The `index` and `semantic` command groups also depend on `graph` and `semantic-layer`; they are specified here as the command surface and wired once those modules exist.
+Depends on [`workspace`](SPEC-workspace.md) (approved) and, for the `mcp` command group, [`core`](SPEC-core.md). The `index` and `semantic` command groups also depend on `graph` and `semantic-layer`; they are specified here as the command surface and wired once those modules exist.
 
 ## Decisions
 
 1. The binary is `workbench` (package `workbench`, in `services/cli`).
-2. This module defines the whole `workbench` command surface for managing a workspace: `init`, `project add | list | remove`, `index` and `semantic add | revise | retract | list | show | prune | generate`. What indexing and annotations *do* is specified elsewhere (`SPEC-index.md`, `SPEC-graph.md`, `SPEC-semantic-layer.md`); this spec fixes how they are invoked, scoped and reported. `workbench lsp run` (`SPEC-lsp.md`) and `workbench platform setup` (`SPEC-platform-setup.md`) have their own specs. Platform setup is its own command; `init` does not take `--platform`.
+2. This module defines the whole `workbench` command surface for managing a workspace: `init`, `project add | list | remove`, `index` and `semantic add | revise | retract | list | show | prune | generate`. What indexing and annotations *do* is specified elsewhere (`SPEC-index.md`, `SPEC-graph.md`, `SPEC-semantic-layer.md`); this spec fixes how they are invoked, scoped and reported. The `mcp` command group (`start`, `serve`, `stop`, `restart`, `status`, `logs`, `connect`) is listed here and specified in `SPEC-core.md`; the MCP server has no executable of its own. `workbench lsp run` (`SPEC-lsp.md`) and `workbench platform setup` (`SPEC-platform-setup.md`) have their own specs. Platform setup is its own command; `init` does not take `--platform`.
 3. The CLI is a *driving adapter*: it parses arguments, calls engine use cases, and prints results. Rules live in the engine; file access lives in `lib/adapters`.
 4. `.workbench/` is entirely git-ignored; `init` adds it to the workspace root's `.gitignore`.
 5. `init` also generates the server config template at `.workbench/mcp/config.yml` and one context config template per default context at `.workbench/mcp/contexts/<name>.yml` (`production`, `staging`, `testing`). Its schema is defined in `SPEC-core.md`, so that step is built after `core`'s model exists.
@@ -141,6 +141,14 @@ Adds meaning to the indexed AST. Commands that act on a node select it with the 
   - Records each result as written by an agent, with the model name, so people can review and `prune` or `retract` them.
   - `--max-nodes <N>` caps how many nodes one run sends. There is no cap unless it is given, so run `--dry-run` first on a large workspace.
   - Prints what it sent (node count, provider, model) and what it created.
+
+### `workbench mcp <command>`
+
+Runs and manages the MCP server, specified in `SPEC-core.md`: `start`, `serve`, `stop`, `restart`, `status`, `logs [-f] [-n N]` and `connect`. They are listed here so the whole command surface is in one place. Points that belong to the CLI:
+
+- `mcp connect` is what AI platforms run. It never prints the banner, progress text or errors to stdout: stdout carries MCP messages only, and diagnostics go to stderr.
+- `mcp logs -f` stops cleanly on Ctrl-C with exit code `0`.
+- The commands find the workspace like all the others, and fail with the usual `no .workbench/ found` error outside one.
 
 ### Common behaviour
 

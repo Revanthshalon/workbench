@@ -1,12 +1,18 @@
 # workbench-mcp
 
-The workbench MCP server. Binary: `workbench-mcp`.
+The Workbench MCP server, as a library crate. It has no executable of its own: the `workbench` CLI runs it with `workbench mcp`.
 
 ```sh
-workbench-mcp --mode <mode>
+workbench mcp start [--mode <mode>]    # run the server in the background
+workbench mcp status                   # what is running
+workbench mcp logs -f                  # follow the log
+workbench mcp restart                  # reload the configs; connected platforms keep working
+workbench mcp stop
 ```
 
-`--mode` picks one bundle of tools, prompts and instructions per server process; the default is `developer-support`, which needs no secrets or production access. `operational-support` must be named explicitly and refuses to start without a valid server config. To use several modes, register the server several times.
+AI platforms are configured to run `workbench mcp connect`, a stdio shim that relays to the running server. The server listens on a Unix socket in `.workbench/run/`, never on the network.
+
+`--mode` picks one bundle of tools, prompts and instructions per server; the default is `developer-support`, which needs no secrets or production access. `operational-support` must be named explicitly and refuses to start without a valid server config. To use several modes, run one server per mode; each has its own socket and log.
 
 | Mode | For | Status |
 |------|-----|--------|

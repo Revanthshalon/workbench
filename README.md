@@ -9,13 +9,13 @@ An MCP server (and companion CLI) that turns your services, logs, config and run
 | Path | Crate / binary | Purpose |
 |------|----------------|---------|
 | [`lib/engine`](lib/engine/README.md) | `engine` | Core: domain, ports, use cases |
-| [`services/mcp`](services/mcp/README.md) | `workbench-mcp` | The MCP server |
+| [`services/mcp`](services/mcp/README.md) | `workbench-mcp` (library) | The MCP server, run with `workbench mcp` |
 | [`services/cli`](services/cli/README.md) | `workbench` | Command-line companion (`init`) |
 | [`docs`](docs/README.md) | | ADRs, HLD, LLD, specs |
 
 ## Modes
 
-`workbench-mcp --mode <mode>` picks one bundle of tools, prompts and instructions per server process; the default is `developer-support`. To use several modes, register the server several times.
+`workbench mcp start --mode <mode>` picks one bundle of tools, prompts and instructions per server; the default is `developer-support`. To use several modes, run one server per mode; AI platforms connect to each with `workbench mcp connect`.
 
 | Mode | For | Status |
 |------|-----|--------|

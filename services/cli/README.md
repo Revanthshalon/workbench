@@ -1,6 +1,6 @@
 # Workbench-cli
 
-Command-line companion to [`workbench-mcp`](../mcp/README.md). Binary: `workbench`.
+Command-line tool for Workbench, and the way to run and manage the [MCP server](../mcp/README.md) (`workbench mcp …`). Binary: `workbench`.
 
 ## Usage
 

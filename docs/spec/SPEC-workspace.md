@@ -9,7 +9,7 @@ Module `workspace` from the [capability map](capability-map.md). Status: **appro
 3. `language` is the project's main language: `python` or `angular`. YAML, Dockerfile and Docker Compose files are file types found *inside* projects, not project languages.
 4. The new config replaces today's empty `config.yml`. `workbench init` now writes `version: 1` and `projects: []`. Adding projects is a separate command, specified in `SPEC-cli.md`.
 5. This module owns the *model, validation, storage ports and memory layout*. The commands that add projects live in `SPEC-cli.md`.
-6. The file adapters (YAML config, memory folders, the existing `.workbench/` directory store) live in a new shared crate, `lib/adapters`, because both `workbench` and `workbench-mcp` read the config.
+6. The file adapters (YAML config, memory folders, the existing `.workbench/` directory store) live in a new shared crate, `lib/adapters`, because both the CLI and the MCP server (`workbench mcp`) read the config.
 7. The config carries `version: 1` so later changes can migrate old files.
 8. *(Amendment)* The config can hold the settings for LLM-assisted semantic annotation, under `semantic.llm`. The supported providers are `copilot-cli`, `ollama` and `claude`. The settings are not secrets: provider, model, optional endpoint and, for `claude`, the *name* of the environment variable that holds the API key. The key itself is never stored in the config, not even inline.
 9. *(Amendment, from `SPEC-core.md`)* The config also holds the storage settings, under `storage`, because `developer-support` and the CLI need storage without the server config. The backend is `sqlite` (the default) or `memgraph`. A Memgraph password is referenced by environment variable name, never stored. The meaning of each setting is defined in `SPEC-storage.md`. Whether it is used is decided by CLI flags (`SPEC-cli.md`), not by the config.
@@ -20,7 +20,7 @@ Give Workbench one trustworthy description of the projects it works on, so that 
 
 Consumers:
 - **`workbench` (CLI)** writes the config and creates each project's memory folder.
-- **`workbench-mcp`** reads it to know the projects, their languages, how to activate their environments and how to run their language servers.
+- **The MCP server** (`workbench mcp`) reads it to know the projects, their languages, how to activate their environments and how to run their language servers.
 - **`lsp` and `platform-setup`** (later modules) read the LSP settings from it.
 
 The module is done when a workspace config round-trips through the engine with validation, a project's memory folder and `INIT-MEMORY.md` are created from a project path, and a query scope can be resolved to a list of projects.
