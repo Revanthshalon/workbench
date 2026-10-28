@@ -1,6 +1,6 @@
 # Spec: cli
 
-Module `cli` from the [capability map](capability-map.md). Status: **draft, awaiting review.**
+Module `cli` from the [capability map](capability-map.md). Status: **approved.**
 
 Depends on [`workspace`](SPEC-workspace.md) (approved). The `index` and `semantic` command groups also depend on `graph` and `semantic-layer`; they are specified here as the command surface and wired once those modules exist.
 
