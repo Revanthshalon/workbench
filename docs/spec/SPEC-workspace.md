@@ -11,6 +11,7 @@ Module `workspace` from the [capability map](capability-map.md). Status: **appro
 5. This module owns the *model, validation, storage ports and memory layout*. The commands that add projects live in `SPEC-cli.md`.
 6. The file adapters (YAML config, memory folders, the existing `.workbench/` directory store) live in a new shared crate, `lib/adapters`, because both `workbench` and `workbench-mcp` read the config.
 7. The config carries `version: 1` so later changes can migrate old files.
+8. *(Amendment)* The config can hold the settings for LLM-assisted semantic annotation, under `semantic.llm`. The supported providers are `copilot-cli`, `ollama` and `claude`. The settings are not secrets: provider, model, optional endpoint and, for `claude`, the *name* of the environment variable that holds the API key. The key itself is never stored in the config, not even inline. Whether it is used is decided by CLI flags (`SPEC-cli.md`), not by the config.
 
 ## Objective
 
@@ -31,6 +32,11 @@ version: 1
 lsp:                         # optional workspace-wide defaults, per language
   python:
     server: basedpyright
+semantic:                    # optional; used only when the CLI is asked to use an LLM
+  llm:
+    provider: claude           # copilot-cli | ollama | claude
+    model: claude-sonnet-5-5
+    api_key_env: ANTHROPIC_API_KEY   # claude only: the variable's name, never the key
 projects:
   - id: billing-api            # stable, kebab-case, unique
     path: services/billing     # relative to the workspace root
@@ -66,6 +72,10 @@ projects:
 | `lsp.command` | Optional. Overrides the catalog's launch command (program and arguments). It runs through `environment.activate` when that is set. |
 | `lsp.settings` | Optional. A free-form map passed to the server unchanged; the workspace does not interpret it. |
 | top-level `lsp.<language>` | Optional. The same fields (`enabled`, `server`, `command`, `settings`) as workspace-wide defaults for every project of that language. |
+| `semantic.llm.provider` | Required when `semantic.llm` is present. One of `copilot-cli`, `ollama`, `claude`. |
+| `semantic.llm.model` | Required for `claude` and `ollama`; optional for `copilot-cli`, which uses its own default. |
+| `semantic.llm.endpoint` | Optional, `ollama` and `claude` only. For `ollama` the default is `http://localhost:11434`. |
+| `semantic.llm.api_key_env` | Required for `claude`, rejected for the other providers. The name of an environment variable; the value is read only when an LLM call is made and is held as a `secrecy` secret. `ollama` needs no key, and `copilot-cli` uses the Copilot CLI's own sign-in. |
 
 **Precedence:** the project's `lsp` block wins over the workspace default for its language, which wins over the catalog default. Fields merge one by one, so a project can override only `settings`.
 
@@ -81,6 +91,7 @@ Every module that queries projects takes a scope: all projects (the default) or 
 - The content is seeded from context the project already has: `README.md`, `CLAUDE.md` and `AGENTS.md` at the project root, whichever exist. If none exist, it is an empty template.
 - The seed is a template with fixed headings (Purpose, Architecture, How to run, Conventions, Gotchas) followed by an "Existing context" section that quotes each source file under its name, each capped at 20 KB.
 - People edit this file. The engine never rewrites it after creation.
+- The same folder also holds `annotations.yml`, the mirror of annotations written by people. It is created and kept up to date by `semantic-layer` (`SPEC-semantic-layer.md`), not by this module.
 
 ## Tech Stack
 
@@ -171,12 +182,12 @@ Conventions follow the existing code: one error enum in `error.rs`, doc comments
 - **Ask first:**
   - Adding a dependency (for example a temp-directory crate for adapter tests).
   - Changing the config's `version` or removing a field.
-- **Never:** overwrite a person's `INIT-MEMORY.md`; store secrets in the workspace config (they belong in the server config); read or write outside `.workbench/` and the project paths.
+- **Never:** overwrite a person's `INIT-MEMORY.md`; store secrets in the workspace config (they belong in the server config; the LLM key is referenced by environment variable name only); read or write outside `.workbench/` and the project paths.
 
 ## Success Criteria
 
 1. `workbench init` writes a `config.yml` that loads back as an empty, valid workspace (`version: 1`, no projects).
-2. A config with two valid projects, including `lsp` blocks, loads, validates and saves unchanged.
+2. A config with two valid projects, including `lsp` blocks and a `semantic.llm` block, loads, validates and saves unchanged.
 3. Each rule in the "Project rules" table is rejected with an error that names the project and field when broken.
 4. Adding a project creates `.workbench/memory/<id>/INIT-MEMORY.md`, seeded from existing context, and a second add never overwrites it.
 5. The effective LSP settings of a project resolve by the precedence rule (project over workspace default over catalog), field by field.
