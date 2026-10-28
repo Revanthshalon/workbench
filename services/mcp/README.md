@@ -3,6 +3,7 @@
 The Workbench MCP server, as a library crate. It has no executable of its own: the `workbench` CLI runs it with `workbench mcp`.
 
 ```sh
+workbench context check               # operational-support: check the connections first
 workbench mcp start [--mode <mode>]    # run the server in the background
 workbench mcp status                   # what is running
 workbench mcp logs -f                  # follow the log

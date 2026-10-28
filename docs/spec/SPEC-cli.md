@@ -7,7 +7,7 @@ Depends on [`workspace`](SPEC-workspace.md) (approved) and, for the `mcp` comman
 ## Decisions
 
 1. The binary is `workbench` (package `workbench`, in `services/cli`).
-2. This module defines the whole `workbench` command surface for managing a workspace: `init`, `project add | list | remove`, `index` and `semantic add | revise | retract | list | show | prune | generate`. What indexing and annotations *do* is specified elsewhere (`SPEC-index.md`, `SPEC-graph.md`, `SPEC-semantic-layer.md`); this spec fixes how they are invoked, scoped and reported. The `mcp` command group (`start`, `serve`, `stop`, `restart`, `status`, `logs`, `connect`) is listed here and specified in `SPEC-core.md`; the MCP server has no executable of its own. `workbench lsp run` (`SPEC-lsp.md`) and `workbench platform setup` (`SPEC-platform-setup.md`) have their own specs. Platform setup is its own command; `init` does not take `--platform`.
+2. This module defines the whole `workbench` command surface for managing a workspace: `init`, `project add | list | remove`, `index`, `context check` and `semantic add | revise | retract | list | show | prune | generate`. What indexing and annotations *do* is specified elsewhere (`SPEC-index.md`, `SPEC-graph.md`, `SPEC-semantic-layer.md`); this spec fixes how they are invoked, scoped and reported. The `mcp` command group (`start`, `serve`, `stop`, `restart`, `status`, `logs`, `connect`) is listed here and specified in `SPEC-core.md`; the MCP server has no executable of its own. `workbench lsp run` (`SPEC-lsp.md`) and `workbench platform setup` (`SPEC-platform-setup.md`) have their own specs. Platform setup is its own command; `init` does not take `--platform`.
 3. The CLI is a *driving adapter*: it parses arguments, calls engine use cases, and prints results. Rules live in the engine; file access lives in `lib/adapters`.
 4. `.workbench/` is entirely git-ignored; `init` adds it to the workspace root's `.gitignore`.
 5. `init` also generates the server config template at `.workbench/mcp/config.yml` and one context config template per default context at `.workbench/mcp/contexts/<name>.yml` (`production`, `staging`, `testing`). Its schema is defined in `SPEC-core.md`, so that step is built after `core`'s model exists.
@@ -142,9 +142,30 @@ Adds meaning to the indexed AST. Commands that act on a node select it with the 
   - `--max-nodes <N>` caps how many nodes one run sends. There is no cap unless it is given, so run `--dry-run` first on a large workspace.
   - Prints what it sent (node count, provider, model) and what it created.
 
+### `workbench context check [--context <NAME>]`
+
+Checks that the connections of a context work, so problems show up before the MCP server is started. `--context` defaults to `default_context` from the server config. It reads the server config and the context's own config file, so it fails with a clear message if either is missing or still holds placeholders.
+
+For each system the context configures, it opens a connection with that context's credentials and runs the smallest harmless request, then prints one line per system:
+
+```text
+context: staging
+  kubectl    ok      12 ms   cluster reachable, namespace 'billing' found
+  postgres   ok      31 ms   connected as readonly
+  redis      failed          connection refused (cache.staging.internal:6379)
+  kafka      skipped         not configured
+```
+
+- Checks only the one context asked for, never the others.
+- Only systems the context configures are checked; the rest are `skipped`.
+- Exit code `0` if every checked system is `ok`, `1` if any failed. Messages never contain a secret.
+- It changes nothing in any system, and it does **not** verify that the credentials are read-only: it only proves the connection works. Read-only is enforced by the tools themselves (`operations` and `data` specs).
+- What each check does for each system is specified in `SPEC-contexts.md`.
+- `workbench mcp start --mode operational-support` runs this same check for its start context and refuses to start if it fails, so running it beforehand is optional but recommended.
+
 ### `workbench mcp <command>`
 
-Runs and manages the MCP server, specified in `SPEC-core.md`: `start`, `serve`, `stop`, `restart`, `status`, `logs [-f] [-n N]` and `connect`. They are listed here so the whole command surface is in one place. Points that belong to the CLI:
+Runs and manages the MCP server, specified in `SPEC-core.md`: `start [--mode M] [--context C]`, `serve`, `stop`, `restart`, `status`, `logs [-f] [-n N]` and `connect`. They are listed here so the whole command surface is in one place. Points that belong to the CLI:
 
 - `mcp connect` is what AI platforms run. It never prints the banner, progress text or errors to stdout: stdout carries MCP messages only, and diagnostics go to stderr.
 - `mcp logs -f` stops cleanly on Ctrl-C with exit code `0`.
@@ -246,7 +267,8 @@ Follow the existing conventions: doc comments on every public item, no `unwrap` 
 8. `workbench semantic add` attaches an annotation to an indexed node; `list --stale` shows annotations whose node changed after the next `index`; `retract` removes one; a target that is not indexed fails with a hint. A person-written annotation also appears in `.workbench/memory/<id>/annotations.yml`; an agent-written one does not.
 9. `workbench semantic prune` lists and then removes exactly the stale and orphaned entries in scope, does nothing under `--dry-run`, and refuses to run non-interactively without `--yes`.
 10. `workbench semantic generate` and `index --annotate` call the LLM only when both the flag and `semantic.llm` are present, record their output as agent-written, and never touch a person-written annotation; `--dry-run` makes no call.
-11. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass.
+11. `workbench context check` prints one line per configured system with its status, checks only the named context, exits `1` when any check fails, never prints a secret, and fails clearly when the server config or the context file is missing or still holds placeholders.
+12. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass.
 
 ## Roadmap (not in this spec)
 

@@ -1,6 +1,6 @@
 # Workbench-cli
 
-Command-line tool for Workbench, and the way to run and manage the [MCP server](../mcp/README.md) (`workbench mcp …`). Binary: `workbench`.
+Command-line tool for Workbench, and the way to run and manage the [MCP server](../mcp/README.md) (`workbench mcp …`). Binary: `workbench`. Before starting `operational-support`, `workbench context check` verifies the connections of the context you will use.
 
 ## Usage
 

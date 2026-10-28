@@ -13,6 +13,7 @@ Depends on [`workspace`](SPEC-workspace.md) (approved). Used by [`cli`](SPEC-cli
 5. The server config lives at `.workbench/mcp/config.yml`. It lists the contexts and, for each, the path of that context's **own config file**. Secrets are written inline in a context file or pulled from an environment variable whose name the same file gives (`<field>_env`); the variable wins when it is set. Inline values stay allowed (confirmed). Every secret is a `secrecy` value from the moment it is read and is never printed, logged, serialised or returned by a tool.
 6. `core` owns the *machinery*: the mode registry, the tool and prompt registry, the server config envelope and loader, the secret type, the start-up sequence, and the server life cycle (socket, shim, logs). Each module owns the content of its own tools, prompts and config section.
 7. `core` is a driving adapter around engine use cases. Tools contain no business rules.
+8. **Connections are checked before the server starts, for operational modes only, and only for the context in use.** `operational-support` does not start unless the connections of its start context pass the context check (`workbench context check`, `SPEC-cli.md`, details in `SPEC-contexts.md`). There is no health monitoring while the server runs and no "degraded" state. `developer-support` makes no connection checks at all.
 
 ## Assumptions (correct me now)
 
@@ -42,7 +43,7 @@ All take `--workspace <DIR>` (default: search upward for `.workbench/`) and, whe
 
 | Command | Behaviour |
 |---|---|
-| `workbench mcp start [--mode M]` | Starts the server in the background and waits until it reports ready or failed. Prints the pid, the socket path and the log path. On failure prints the reasons (the same ones `serve` would print), exits non-zero and leaves nothing running. Fails if a server for that workspace and mode is already running. |
+| `workbench mcp start [--mode M] [--context C]` | Starts the server in the background and waits until it reports ready or failed. For `operational-support` it first runs the context check for `C` (default: `default_context`) and refuses to start if any configured connection fails; `C` is the context every new session starts in. `--context` is rejected for other modes. Prints the pid, the socket path and the log path. On failure prints the reasons (the same ones `serve` would print), exits non-zero and leaves nothing running. Fails if a server for that workspace and mode is already running. |
 | `workbench mcp serve [--mode M]` | Runs the server in the foreground and logs to stderr. What `start` runs in the background; also useful for debugging. |
 | `workbench mcp stop [--mode M \| --all]` | Asks the server to shut down cleanly and waits. Connected shims keep waiting for it (see Shim). |
 | `workbench mcp restart [--mode M]` | `stop` then `start`. Reloads the configs. Connected shims reconnect on their own. |
@@ -67,13 +68,15 @@ locate the workspace            fail: "no .workbench/ found from <cwd>. Run 'wor
   → if the mode needs the server config:
         load it and every context file it lists, resolve secret references, validate every section
         (collect all problems, report them together)
+  → if the mode connects to systems (operational-support):
+        run the context check for the start context; any failed connection stops the start
   → build adapters from the config (storage, then the mode's modules)
   → register tools and prompts for the mode
   → bind the socket, write the pid file, report ready
   → accept connections
 ```
 
-Any failure before "report ready" is written to the log and reported to `start` (or to stderr with `serve`); no pid file or socket is left behind.
+A failed context check is reported like any other start-up failure, naming each system that failed and why (never with a secret). Any failure before "report ready" is written to the log and reported to `start` (or to stderr with `serve`); no pid file or socket is left behind.
 
 ### Run files
 
@@ -99,7 +102,9 @@ The shim:
 
 ### Sessions and state
 
-State that belongs to a client is per session, not per server: the active context (`SPEC-contexts.md`) starts at `default_context` for every new session, and the elicitation prompt for switching goes to the client that asked. After a `restart` a session starts again at `default_context`. Several platforms can use one server at the same time without affecting each other.
+State that belongs to a client is per session, not per server: the active context (`SPEC-contexts.md`) and the elicitation prompt for switching, which goes to the client that asked. Several platforms can use one server at the same time without affecting each other.
+
+A new session starts in the server's start context (`--context`, default `default_context`); after a `restart` a session starts there again. Switching a session to another context (only on the user's explicit instruction, confirmed through elicitation) first runs the context check for the target and refuses the switch if it fails, so a context's connections are only checked when it is about to be used.
 
 A **tool context** is passed to every handler: the workspace, the session id, the session's active context (operational modes) and the client's capabilities (for example whether it supports elicitation, which `contexts` needs). `core` also offers a call hook that runs before and after every tool call; `audit` uses it, `core` does not know about audit.
 
@@ -250,7 +255,8 @@ Follow the existing conventions: one error enum per concern, doc comments on eve
   - Context files: relative paths resolve against the server config's directory; a missing or invalid file is reported with its path alongside other problems.
   - A config with several problems reports all of them at once.
   - `Secret`: `Debug` output contains no value; there is no `Display` or `Serialize` (a compile-time check with `static_assertions`-style trait bounds, or a documented compile-fail case).
-  - Per-session state: two sessions have independent active contexts, and each starts at `default_context`.
+  - Per-session state: two sessions have independent active contexts, and each starts in the server's start context.
+  - Context check gate (with fake connection probes): `operational-support` is refused when any probe fails and names it; unconfigured systems are skipped; `developer-support` runs no probes; a context switch runs the target's probes first and is refused on failure; no probe runs after start-up.
 - **Adapter tests** (`lib/adapters`): the YAML loader on valid, invalid and placeholder files; the template round-trips and fails validation until placeholders are replaced.
 - **Integration tests** (`services/cli/tests/`, running the real `workbench` binary in a temp workspace; JSON-RPC written by hand over `std::process::Command`, no extra dependency):
   - Life cycle: `start` then `status` shows the server; `start` again fails; `stop` removes the socket and pid file; a stale pid file is cleaned up; `start` for `operational-support` without a valid config fails, names the file and leaves no pid file or socket.
@@ -284,6 +290,10 @@ Follow the existing conventions: one error enum per concern, doc comments on eve
 8. The socket is reachable only by the owner (`0600` in a `0700` directory), and no network port is opened.
 9. A secret written inline and also named by `X_env` resolves to the environment value; with the variable unset it resolves to the inline value; with neither it is an error naming the file, field and variable. No value appears in any output or log.
 10. Every registered tool has a kind; the registry refuses one without.
+    - `start --mode operational-support` runs the context check for its start context and refuses to start, naming each failing system, if any connection fails; nothing is left running. With all connections ok it starts.
+    - `developer-support` runs no connection checks.
+    - Switching a session to another context runs that context's check first and refuses the switch if it fails.
+    - While the server runs, a tool whose connection has gone down returns an error naming the system; there is no background monitoring.
 11. Each context's config is loaded from the path in the server config (relative to the server config's directory, or absolute); a missing or invalid context file is reported with its path.
 12. The templates written by `workbench init` (server config and one file per context) fail validation until their placeholders are replaced.
 13. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass.
