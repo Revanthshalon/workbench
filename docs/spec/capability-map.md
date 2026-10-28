@@ -95,4 +95,5 @@ None at map level. Each module spec will list its own.
 
 ## Roadmap (not in the first release)
 
+- **MCP over Streamable HTTP**, as an opt-in second listener (`workbench mcp start --http`) next to the Unix socket: bound to `127.0.0.1` only, with a bearer token and `Origin` checking, so HTTP-capable platforms can connect without the stdio shim. The socket and shim stay the default.
 - `workbench project scan <DIR>`: find the projects under a directory and add them in one go. For now projects are added one at a time.

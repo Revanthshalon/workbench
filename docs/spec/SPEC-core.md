@@ -288,6 +288,11 @@ Follow the existing conventions: one error enum per concern, doc comments on eve
 12. The templates written by `workbench init` (server config and one file per context) fail validation until their placeholders are replaced.
 13. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass.
 
+## Roadmap (not in this spec)
+
+- Streamable HTTP as an opt-in listener (`workbench mcp start --http`), localhost only, with a bearer token and `Origin` checking. Until then there is no network listener.
+- A Windows transport (named pipes).
+
 ## Open Questions
 
 1. **Auto-start from `connect`:** I made `connect --start` an opt-in flag that works for `developer-support` only, so a platform can bring up the safe mode on its own, while `operational-support` always needs an explicit `workbench mcp start`. Is that right, or should `connect` never start a server?
