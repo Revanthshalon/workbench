@@ -10,7 +10,7 @@ Depends on [`workspace`](SPEC-workspace.md) (approved). The `index` and `semanti
 2. This module defines the whole `workbench` command surface for managing a workspace: `init`, `project add | list | remove`, `index` and `semantic add | revise | retract | list | show | prune | generate`. What indexing and annotations *do* is specified elsewhere (`SPEC-index.md`, `SPEC-graph.md`, `SPEC-semantic-layer.md`); this spec fixes how they are invoked, scoped and reported. `workbench lsp run` (`SPEC-lsp.md`) and `workbench platform setup` (`SPEC-platform-setup.md`) have their own specs. Platform setup is its own command; `init` does not take `--platform`.
 3. The CLI is a *driving adapter*: it parses arguments, calls engine use cases, and prints results. Rules live in the engine; file access lives in `lib/adapters`.
 4. `.workbench/` is entirely git-ignored; `init` adds it to the workspace root's `.gitignore`.
-5. `init` also generates the server config template at `.workbench/mcp/config.yml`. Its schema is defined in `SPEC-core.md`, so that step is built after `core`'s model exists.
+5. `init` also generates the server config template at `.workbench/mcp/config.yml` and one context config template per default context at `.workbench/mcp/contexts/<name>.yml` (`production`, `staging`, `testing`). Its schema is defined in `SPEC-core.md`, so that step is built after `core`'s model exists.
 
 ## Further decisions
 
@@ -51,6 +51,7 @@ Creates, under `<DIR>` (default `.`):
 |---|---|
 | `.workbench/config.yml` | `version: 1`, `projects: []` (the format in `SPEC-workspace.md`) |
 | `.workbench/mcp/config.yml` | The server config template (`SPEC-core.md`); added once `core` defines it |
+| `.workbench/mcp/contexts/<name>.yml` | One context config template per default context (`production`, `staging`, `testing`); content owned by `SPEC-contexts.md` |
 | `<DIR>/.gitignore` | A `.workbench/` line appended; the file is created if missing; nothing is added twice |
 
 Refuses to run if `.workbench/config.yml` already exists, and changes nothing in that case. `init` does not set up any AI platform; run `workbench platform setup` afterwards.
@@ -112,7 +113,7 @@ Builds the AST data for the projects in the workspace and keeps it up to date. I
 
 - Prints progress to stderr and a summary to stdout, per project: files parsed, unchanged, removed, nodes re-linked, parse failures, and the number of annotations that became stale.
 - Fails with a hint when the workspace has no projects.
-- It reads project files and writes only to the storage backend; it never changes a project's files.
+- It reads project files and writes only to the storage backend (configured in the workspace config's `storage` block); it never changes a project's files.
 - The MCP `reindex` tool runs the same use case, so both produce the same result.
 - Exit codes follow "Common behaviour"; how partial failures (some files fail to parse) are counted is defined in `SPEC-index.md`.
 
@@ -183,7 +184,7 @@ lib/adapters/src/         # + project_inspector.rs, gitignore_file.rs, server_co
 |---|---|
 | `ProjectInspector` | `inspect(path)` returns what is detectable: language, dependency manager, venv. Reads files only. |
 | `GitignoreStore` | `ensure_ignored(root, entry)` appends the entry once, creating the file if missing. |
-| `ServerConfigStore` | `create_template(root)` writes `.workbench/mcp/config.yml`, never overwriting. |
+| `ServerConfigStore` | `create_template(root)` writes the server config and the context config templates under `.workbench/mcp/`, never overwriting. |
 
 `WorkspaceStore`, `MemoryStore` and `ContextSource` come from `SPEC-workspace.md`. The `index` and `semantic` commands call engine use cases (`index_projects`, and the annotation use cases) that are defined by `SPEC-index.md` and `SPEC-semantic-layer.md`; the CLI adds no rules of its own for them.
 

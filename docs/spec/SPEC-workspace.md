@@ -11,7 +11,8 @@ Module `workspace` from the [capability map](capability-map.md). Status: **appro
 5. This module owns the *model, validation, storage ports and memory layout*. The commands that add projects live in `SPEC-cli.md`.
 6. The file adapters (YAML config, memory folders, the existing `.workbench/` directory store) live in a new shared crate, `lib/adapters`, because both `workbench` and `workbench-mcp` read the config.
 7. The config carries `version: 1` so later changes can migrate old files.
-8. *(Amendment)* The config can hold the settings for LLM-assisted semantic annotation, under `semantic.llm`. The supported providers are `copilot-cli`, `ollama` and `claude`. The settings are not secrets: provider, model, optional endpoint and, for `claude`, the *name* of the environment variable that holds the API key. The key itself is never stored in the config, not even inline. Whether it is used is decided by CLI flags (`SPEC-cli.md`), not by the config.
+8. *(Amendment)* The config can hold the settings for LLM-assisted semantic annotation, under `semantic.llm`. The supported providers are `copilot-cli`, `ollama` and `claude`. The settings are not secrets: provider, model, optional endpoint and, for `claude`, the *name* of the environment variable that holds the API key. The key itself is never stored in the config, not even inline.
+9. *(Amendment, from `SPEC-core.md`)* The config also holds the storage settings, under `storage`, because `developer-support` and the CLI need storage without the server config. The backend is `sqlite` (the default) or `memgraph`. A Memgraph password is referenced by environment variable name, never stored. The meaning of each setting is defined in `SPEC-storage.md`. Whether it is used is decided by CLI flags (`SPEC-cli.md`), not by the config.
 
 ## Objective
 
@@ -32,6 +33,13 @@ version: 1
 lsp:                         # optional workspace-wide defaults, per language
   python:
     server: basedpyright
+storage:                     # optional; default is SQLite at .workbench/data/workbench.db
+  backend: sqlite            # sqlite | memgraph
+  # memgraph:
+  #   host: localhost
+  #   port: 7687
+  #   username: workbench
+  #   password_env: MEMGRAPH_PASSWORD   # the variable's name, never the password
 semantic:                    # optional; used only when the CLI is asked to use an LLM
   llm:
     provider: claude           # copilot-cli | ollama | claude
@@ -72,6 +80,10 @@ projects:
 | `lsp.command` | Optional. Overrides the catalog's launch command (program and arguments). It runs through `environment.activate` when that is set. |
 | `lsp.settings` | Optional. A free-form map passed to the server unchanged; the workspace does not interpret it. |
 | top-level `lsp.<language>` | Optional. The same fields (`enabled`, `server`, `command`, `settings`) as workspace-wide defaults for every project of that language. |
+| `storage.backend` | Optional, default `sqlite`. One of `sqlite`, `memgraph`. |
+| `storage.sqlite.path` | Optional. Relative to the workspace root or absolute. Default `.workbench/data/workbench.db`. |
+| `storage.memgraph.host`, `port`, `username` | Required when the backend is `memgraph`. |
+| `storage.memgraph.password_env` | Optional. The name of an environment variable; the value is held as a `secrecy` secret and read only when a connection is opened. |
 | `semantic.llm.provider` | Required when `semantic.llm` is present. One of `copilot-cli`, `ollama`, `claude`. |
 | `semantic.llm.model` | Required for `claude` and `ollama`; optional for `copilot-cli`, which uses its own default. |
 | `semantic.llm.endpoint` | Optional, `ollama` and `claude` only. For `ollama` the default is `http://localhost:11434`. |
@@ -182,12 +194,12 @@ Conventions follow the existing code: one error enum in `error.rs`, doc comments
 - **Ask first:**
   - Adding a dependency (for example a temp-directory crate for adapter tests).
   - Changing the config's `version` or removing a field.
-- **Never:** overwrite a person's `INIT-MEMORY.md`; store secrets in the workspace config (they belong in the server config; the LLM key is referenced by environment variable name only); read or write outside `.workbench/` and the project paths.
+- **Never:** overwrite a person's `INIT-MEMORY.md`; store secrets in the workspace config (they belong in a context config file; the LLM key and the Memgraph password are referenced by environment variable name only); read or write outside `.workbench/` and the project paths.
 
 ## Success Criteria
 
 1. `workbench init` writes a `config.yml` that loads back as an empty, valid workspace (`version: 1`, no projects).
-2. A config with two valid projects, including `lsp` blocks and a `semantic.llm` block, loads, validates and saves unchanged.
+2. A config with two valid projects, including `lsp` blocks, a `storage` block and a `semantic.llm` block, loads, validates and saves unchanged.
 3. Each rule in the "Project rules" table is rejected with an error that names the project and field when broken.
 4. Adding a project creates `.workbench/memory/<id>/INIT-MEMORY.md`, seeded from existing context, and a second add never overwrites it.
 5. The effective LSP settings of a project resolve by the precedence rule (project over workspace default over catalog), field by field.
