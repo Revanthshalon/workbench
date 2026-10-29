@@ -111,7 +111,7 @@ Every module that queries projects takes a scope: all projects (the default) or 
 - `serde` and `yaml_serde` (already workspace dependencies) for the config file.
 - `thiserror` for errors (already used).
 - No new dependencies are needed for the model. A temp-directory crate for adapter tests is an ask-first item (see Boundaries).
-- New workspace member `lib/adapters` (package `adapters`), depending on `engine`, `serde` and `yaml_serde`; `services/cli` and `services/mcp` depend on it.
+- New workspace member `lib/adapters` (package `adapters`), depending on `engine`, `serde` and `yaml_serde`; `services/cli` (the `workbench` binary, which includes the MCP server) depends on it.
 
 ## Commands
 
@@ -143,7 +143,7 @@ lib/adapters/src/        # shared driven adapters (new crate)
 └── memory_dir.rs       # filesystem adapter for MemoryStore and ContextSource
 ```
 
-The engine has no I/O. `services/cli` and `services/mcp` pick adapters from `lib/adapters` and wire them to the engine; service-specific adapters stay in their service.
+The engine has no I/O. `services/cli` (the CLI and the MCP server) picks adapters from `lib/adapters` and wires them to the engine; adapters only that binary needs stay in `services/cli`.
 
 ### Ports
 

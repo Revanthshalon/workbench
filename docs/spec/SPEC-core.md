@@ -6,7 +6,7 @@ Depends on [`workspace`](SPEC-workspace.md) (approved). Used by [`cli`](SPEC-cli
 
 ## Decisions
 
-1. **One binary.** There is no separate `workbench-mcp` executable. The MCP server is the `mcp` command group of `workbench`. Its code is the library crate `services/mcp` (package `workbench-mcp`, no binary), which `services/cli` calls.
+1. **One binary.** There is no separate `workbench-mcp` executable and no `services/mcp` crate. The MCP server is the `mcp` command group of `workbench`; its code is the `mcp` module of the `workbench` crate (`services/cli/src/mcp/`). The engine keeps its "no I/O" rule, so the sockets, process handling, logs and the MCP transport live in that module, not in `lib/engine`.
 2. **Run model.** A **server** runs in the background, one per workspace and mode, and listens on a **Unix domain socket**. AI platforms are configured to run `workbench mcp connect`, a **stdio shim** that relays between the platform and the server. The CLI manages the server's life: `start`, `stop`, `restart`, `status`, `logs`.
 3. `--mode <mode>` picks the mode. The default is `developer-support`. `operational-support` must be named explicitly.
 4. **Each mode loads only what it needs.** `developer-support` never reads the server config and holds no secrets. `operational-support` requires a valid server config *before* the server starts; if it is missing or invalid, `start` fails with an error that says what to fix, and no server is left running.
@@ -56,7 +56,7 @@ All take `--workspace <DIR>` (default: search upward for `.workbench/`) and, whe
 
 | Mode | Server config | Modules registered |
 |---|---|---|
-| `developer-support` (default) | Not read | `graph`, `semantic-layer`, `lsp` |
+| `developer-support` (default) | Not read | `graph`, `semantic-layer`, `lsp`, `dev-support` |
 | `operational-support` | Required and valid | everything in `developer-support`, plus `contexts`, `audit`, `operations`, `data`, `execution-flow`, `flow-memory`, `incidents`, `agent-prompts` |
 
 A mode is a list of modules. `core` registers each module's tools and prompts; a tool that is not in the mode's modules does not exist for the client. Several servers (one per mode) can run at once in the same workspace; each has its own socket and log.
@@ -132,8 +132,9 @@ Each tool has: a snake_case name, a description, an input schema derived from a 
 |---|---|---|
 | `observe` | Reads the code, the index or an observed system. Never changes an observed system. | `service_map`, `fetch_logs`, `db_query` |
 | `record` | Writes only to Workbench's own storage or files. | `remember`, `save_incident_report`, `reindex` |
+| `edit` | Changes files inside a registered project's directory. | `apply_patch`, `create_file`, `rename_symbol`, `apply_code_action` |
 
-There is no third kind: **no tool changes an observed system**, in any mode. Every tool must declare its kind; the registry refuses to start with a tool that does not. `observe` tools are advertised to the client with the MCP read-only hint.
+There are three kinds. **No tool changes an observed system** (a running environment or its datastores), in any mode. Only `developer-support` registers `edit` tools; `operational-support` registers none, and the registry refuses an `edit` tool for any other mode. `edit` tools follow these rules: they write only inside a registered project's directory (paths are resolved first, so a symlink cannot escape it); they refuse `.git/` and `.workbench/`; a patch applies only if the file is unchanged since the agent read it (compared by content hash), otherwise it fails and returns the current hash; writes are atomic; they return the diff they applied; and they index the files they touched right away. They are advertised to the client as not read-only, and they ask for no confirmation of their own: the AI platform's permission prompts apply. `developer-support` writes no session log, so git is the record of edits. Every tool must declare its kind; the registry refuses to start with a tool that does not. `observe` tools are advertised to the client with the MCP read-only hint.
 
 Conventions every module follows:
 - Tools that query projects take an optional `projects` list (project ids); omitted means all projects (`SPEC-workspace.md`).
@@ -219,8 +220,8 @@ lib/engine/src/server/
 lib/engine/src/ports.rs      # + ServerConfigSource, EnvSource
 lib/adapters/src/            # + server_config_file.rs (YAML + template), env_process.rs (std::env)
 
-services/mcp/src/            # library crate `workbench-mcp`, no binary
-├── lib.rs         # public entry points used by the CLI: start, serve, stop, restart, status, logs, connect
+services/cli/src/mcp/         # the MCP server: a module of the `workbench` crate (no separate crate)
+├── mod.rs         # entry points called by the `mcp` command group: start, serve, stop, restart, status, logs, connect
 ├── startup.rs     # the start-up sequence above
 ├── daemon.rs      # socket listener, one session per client connection, clean shutdown
 ├── shim.rs        # stdio <-> socket relay with handshake replay and reconnect
@@ -232,7 +233,7 @@ services/mcp/src/            # library crate `workbench-mcp`, no binary
 services/cli/src/cli.rs      # + the `mcp` command group (SPEC-cli)
 ```
 
-The engine has no I/O: environment access sits behind the `EnvSource` port so tests can supply their own. Process, socket and log-file handling live in `services/mcp`, the only place that needs them.
+The engine has no I/O: environment access sits behind the `EnvSource` port so tests can supply their own. Process, socket and log-file handling live in `services/cli/src/mcp/`, the only place that needs them.
 
 ## Code Style
 
@@ -268,7 +269,8 @@ Follow the existing conventions: one error enum per concern, doc comments on eve
 
 - **Engine unit tests:**
   - The mode table: each mode lists the modules above and nothing else.
-  - The registry rejects a tool without a kind and a duplicate tool name.
+  - The registry rejects a tool without a kind and a duplicate tool name, and an `edit` tool in any mode but `developer-support`.
+  - `edit` rules: a path outside the project, a symlink out of it, and `.git/` or `.workbench/` are refused; a stale content hash is refused with the current hash; a successful edit returns a diff and triggers an incremental index of the touched files.
   - Secret references: a set `X_env` variable wins over inline `X`; inline is used when the variable is unset; neither is an error that names the file, field and variable; an unset `_env` variable with no inline value does not fall back silently.
   - Context files: relative paths resolve against the server config's directory; a missing or invalid file is reported with its path alongside other problems.
   - A config with several problems reports all of them at once.
@@ -295,7 +297,7 @@ Follow the existing conventions: one error enum per concern, doc comments on eve
   - Adding a mode, or changing what an existing mode registers.
   - Changing the server config `version`, or the secret-reference convention (`X` / `X_env`).
   - Any network (TCP or HTTP) transport, or a Windows transport.
-- **Never:** listen on a network interface; read the server config in `developer-support`; write anything to stdout from `connect` except MCP messages; print, log, serialise or return a secret; register a tool that can change an observed system; start a server on `connect` unless `--start` is given for `developer-support`.
+- **Never:** register an `edit` tool outside `developer-support`; let an `edit` tool write outside a registered project's directory; listen on a network interface; read the server config in `developer-support`; write anything to stdout from `connect` except MCP messages; print, log, serialise or return a secret; register a tool that can change an observed system; start a server on `connect` unless `--start` is given for `developer-support`.
 
 ## Success Criteria
 
@@ -309,7 +311,8 @@ Follow the existing conventions: one error enum per concern, doc comments on eve
 7. Two clients connected at once have separate sessions and separate active contexts.
 8. The socket is reachable only by the owner (`0600` in a `0700` directory), and no network port is opened.
 9. A secret written inline and also named by `X_env` resolves to the environment value; with the variable unset it resolves to the inline value; with neither it is an error naming the file, field and variable. No value appears in any output or log.
-10. Every registered tool has a kind; the registry refuses one without.
+10. Every registered tool has a kind (`observe`, `record` or `edit`); the registry refuses one without.
+    - `edit` tools exist only in `developer-support`, write only inside registered project directories (a symlink escape and `.git/` or `.workbench/` are refused), apply a patch only to a file unchanged since it was read, return the diff, and index what they touched.
     - `start --mode operational-support` runs the context check for its start context and refuses to start, naming each failing system, if any connection fails; nothing is left running. With all connections ok it starts.
     - `developer-support` runs no connection checks.
     - Switching a session to another context runs that context's check first and refuses the switch if it fails.
