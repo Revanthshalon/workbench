@@ -67,7 +67,7 @@ A mode is a list of modules. `core` registers each module's tools and prompts; a
 locate the workspace            fail: "no .workbench/ found from <cwd>. Run 'workbench init'."
   → load and validate workspace config
   → if the mode needs the server config:
-        load it and every context file it lists, resolve secret references, validate every section
+        load it and every context file it lists and validate every section; resolve secret references for the start context only
         (collect all problems, report them together)
   → if the mode connects to systems (operational-support):
         run the context check for the start context; any failed connection stops the start
@@ -175,7 +175,7 @@ postgres:
 | Collecting all validation problems into one report | Validation of its section |
 | Stitching the template for `workbench init` | A template fragment with placeholders |
 
-**Context config files.** Each context has its own file. The server config gives its path: relative to the directory of the server config, or absolute. `core` loads every listed file at start-up; a missing, unreadable or invalid file is reported with its path together with the other problems. Because each file holds that context's credentials and settings, a person can keep, replace or share one without touching the others. All of them sit under `.workbench/`, which is git-ignored.
+**Context config files.** Each context has its own file. The server config gives its path: relative to the directory of the server config, or absolute. `core` loads and validates every listed file at start-up, but resolves a context's secret references only for the start context at start and for another context when a session switches to it (`SPEC-contexts.md`), so the secrets of an environment nobody is using stay out of memory; a missing, unreadable or invalid file is reported with its path together with the other problems. Because each file holds that context's credentials and settings, a person can keep, replace or share one without touching the others. All of them sit under `.workbench/`, which is git-ignored.
 
 **Secret references.** For a secret field `X`, a context file may contain `X` (an inline value) and/or `X_env` (the *name* of an environment variable). Resolution, in order:
 1. `X_env` is present and that variable is set: use its value (the environment wins).
