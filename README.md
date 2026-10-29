@@ -38,6 +38,16 @@ Hexagonal (ports and adapters):
 - `services/*` parse their own input (clap, MCP) and call the engine.
 - Driven adapters (filesystem, later k8s, databases, logs) live in the service that uses them and implement the engine's ports.
 
+## Storage
+
+Workbench keeps the code graph and its semantic annotations in **Memgraph** (the default) or **SQLite**. Memgraph runs on your own machine; Workbench does not install or start it. For example:
+
+```sh
+docker run -p 7687:7687 memgraph/memgraph
+```
+
+To use SQLite instead, which needs no server, set `storage.backend: sqlite` in `.workbench/config.yml`. `workbench storage status` shows which backend is in use and whether it answers.
+
 ## Development
 
 Requires Rust 1.99.1+ (edition 2024; see `rust-toolchain.toml`).

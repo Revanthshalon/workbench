@@ -19,6 +19,8 @@ Creates `<DIR>/.workbench/config.yml`, empty for now. It refuses to overwrite an
 workbench init --platform copilot-cli,claude-code --out ~/work/my-service
 ```
 
+Storage: Workbench keeps its graph in Memgraph by default (SQLite is the alternative); `workbench storage status` checks it. See the [root README](../../README.md#storage).
+
 ## Structure
 
 | Path | Role |

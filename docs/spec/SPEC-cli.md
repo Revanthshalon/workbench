@@ -49,7 +49,7 @@ Creates, under `<DIR>` (default `.`):
 
 | Created | Content |
 |---|---|
-| `.workbench/config.yml` | `version: 1`, `projects: []` (the format in `SPEC-workspace.md`) |
+| `.workbench/config.yml` | `version: 1`, a `storage` block (`backend: memgraph`) and `projects: []` (the format in `SPEC-workspace.md`) |
 | `.workbench/memory/INIT-MEMORY.md` | An empty workspace-level context template for how the projects connect (`SPEC-workspace.md`) |
 | `.workbench/mcp/config.yml` | The server config template (`SPEC-core.md`); added once `core` defines it |
 | `.workbench/mcp/contexts/<name>.yml` | One context config template per default context (`production`, `staging`, `testing`); content owned by `SPEC-contexts.md` |
@@ -144,11 +144,11 @@ Keeps the index fresh while code changes, including edits made by AI tools. The 
 
 ### `workbench storage status`
 
-A read-only check of the storage backend (`SPEC-storage.md`). It prints the backend (SQLite or Memgraph), where it is (a path or `host:port`), whether it answers and how fast, each module's schema version, and per view (the project working trees and each context) the counts of indexed files, nodes, edges and annotations, plus the file size for SQLite.
+A read-only check of the storage backend (`SPEC-storage.md`). It prints the backend (Memgraph or SQLite), where it is (a path or `host:port`), whether it answers and how fast, each module's schema version, and per view (the project working trees and each context) the counts of indexed files, nodes, edges and annotations, plus the file size for SQLite.
 
 - It needs only the workspace config, so it works with `developer-support`.
 - It changes nothing and applies no migrations; if the database is newer than this `workbench` it says so.
-- When the backend cannot be reached it exits `1` and names the backend and its location, with no secret in the message.
+- When the backend cannot be reached it exits `1` and names the backend and its location, with the hint to start Memgraph (for example `docker run -p 7687:7687 memgraph/memgraph`) or set `storage.backend: sqlite`, and with no secret in the message.
 
 ### `workbench semantic <command>`
 

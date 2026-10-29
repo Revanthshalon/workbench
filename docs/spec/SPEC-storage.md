@@ -6,7 +6,7 @@ Depends on [`core`](SPEC-core.md) (approved) and reads the `storage` block of th
 
 ## Decisions already made elsewhere
 
-1. The backend is **SQLite or Memgraph**, chosen by the `storage` block of the **workspace config**, so `developer-support` and the CLI can use it without the server config. The default is SQLite at `.workbench/data/workbench.db`.
+1. The backend is **Memgraph (the default) or SQLite**, chosen by the `storage` block of the **workspace config**, so `developer-support` and the CLI can use it without the server config. The default is Memgraph on the person's own machine at `localhost:7687`; SQLite (a file at `.workbench/data/workbench.db`) is the alternative that needs no server.
 2. A Memgraph password is never stored: `storage.memgraph.password_env` names an environment variable. The value is a `secrecy` secret, read only when a connection is opened.
 3. `graph`, `semantic-layer`, `flow-memory` and `incidents` do not know which backend is in use. The engine defines ports; the adapters live in `lib/adapters`.
 4. The AST graph and the semantic annotations live here. The audit record does **not**: it is the per-session log file (`SPEC-core.md`). Annotations written by people and flows are also mirrored to files by their own modules.
@@ -15,19 +15,20 @@ Depends on [`core`](SPEC-core.md) (approved) and reads the `storage` block of th
 
 ## Assumptions (correct me now)
 
-1. *(Confirmed)* **Writes and the engine's own reads use typed operations; agents get a free-form read-only query.** Each port offers the typed operations its consumer needs (upsert the nodes of a file, look up a symbol, walk callers to a depth), and both adapters implement every one with the same meaning. On top of that, the MCP `graph_query` tool takes a **free-form query in the backend's own language**: SQL on SQLite, Cypher on Memgraph. The query always runs read-only, over a documented query schema (see "Free-form graph queries"). Making the language the same on both backends is on the roadmap.
+1. *(Confirmed)* **Writes and the engine's own reads use typed operations; agents get a free-form read-only query.** Each port offers the typed operations its consumer needs (upsert the nodes of a file, look up a symbol, walk callers to a depth), and both adapters implement every one with the same meaning. On top of that, the MCP `graph_query` tool takes a **free-form query in the backend's own language**: Cypher on Memgraph (the default), SQL on SQLite. The query always runs read-only, over a documented query schema (see "Free-form graph queries"). Making the language the same on both backends is on the roadmap.
 2. **Writes are whole batches.** A write takes a complete value (for example everything parsed from a set of files in one view) and applies it atomically. No transaction object crosses the port, so no backend detail leaks out.
 3. **Migrations are forward-only and automatic.** Every module registers its own migrations; they run when a process opens the storage. A database written by a newer `workbench` than the one opening it is refused with a clear message, never changed.
-4. *(Confirmed)* **One storage per person.** There is no shared server: SQLite is a file on the person's machine, and Memgraph runs on the person's own machine. An optional `storage.memgraph.namespace` (default `default`) keeps several of that person's workspaces apart on one local Memgraph. This adds one optional field to the `storage` block of `SPEC-workspace.md`, which is amended to match.
-5. *(Confirmed)* Search on Memgraph is more limited than SQLite's FTS5, so `search_code` and annotation search there fall back to a case-insensitive contains-scan with a result limit. That is acceptable for the first release.
-6. Data is sensitive (code structure, annotations, incident text). The SQLite directory is created `0700` and the file `0600`.
+4. *(Confirmed)* **One storage per person.** There is no shared server: Memgraph (the default) runs on the person's own machine, and SQLite is a file on it. An optional `storage.memgraph.namespace` (default `default`) keeps several of that person's workspaces apart on one local Memgraph. This adds one optional field to the `storage` block of `SPEC-workspace.md`, which is amended to match.
+5. *(Confirmed)* Search on Memgraph is more limited than SQLite's FTS5, so `search_code` and annotation search there fall back to a case-insensitive contains-scan with a result limit. Because Memgraph is now the default backend, this is the search most people will get; SQLite's FTS5 is faster. That is acceptable for the first release, and using Memgraph's own text indexes is on the roadmap.
+6. Data is sensitive (code structure, annotations, incident text). The SQLite directory is created `0700` and the file `0600`; a Memgraph instance should only listen on the person's own machine.
+7. *(Confirmed)* **Memgraph first.** Memgraph is the default backend and its adapter is built first; SQLite stays supported as the alternative that needs no server. Workbench does not install, start or stop Memgraph: a person runs it, for example with `docker run -p 7687:7687 memgraph/memgraph`. Because `developer-support` is the default mode and needs storage, it will not start until Memgraph answers, unless `storage.backend` is set to `sqlite`.
 
 ## Objective
 
 Give every module that needs to remember something one place to put it, whichever backend a person chose, with safe access from several processes and with no module depending on a specific database.
 
 The module is done when:
-- the same operations give the same results on SQLite and on Memgraph (proved by one shared test suite run against both),
+- the same operations give the same results on Memgraph and on SQLite (proved by one shared test suite run against both),
 - the CLI, the MCP server and the watcher can use the same storage at once without corrupting it or losing writes,
 - a database from a newer version is refused, and an older one is migrated,
 - `workbench storage status` shows what is stored and whether the backend answers.
@@ -59,8 +60,8 @@ Each owner defines its own model and operations. `storage` defines the machinery
 ### Opening the storage
 
 ```text
-read the storage block of the workspace config (default: sqlite at .workbench/data/workbench.db)
-  → open the backend            fail: "cannot reach memgraph at <host>:<port>: <reason>"
+read the storage block of the workspace config (default: memgraph at localhost:7687)
+  → open the backend            fail: "cannot reach memgraph at <host>:<port>: <reason>. Start Memgraph (for example 'docker run -p 7687:7687 memgraph/memgraph') or set storage.backend: sqlite"
   → read each module's schema version
   → if the database is newer than this workbench      fail: "database schema vN is newer than this workbench supports (vM). Upgrade workbench."
   → apply pending migrations in order
@@ -68,15 +69,6 @@ read the storage block of the workspace config (default: sqlite at .workbench/da
 ```
 
 Opening storage is part of the start-up of both MCP modes (`SPEC-core.md`, "build adapters from the config"): if the backend cannot be reached the server does not start, and says why. CLI commands that need storage (`index`, `watch`, `semantic …`, `context sync`) fail the same way.
-
-### SQLite
-
-- One database file, opened in **WAL mode** with a 5 second busy timeout, foreign keys on and `synchronous=NORMAL`.
-- Readers use their own connections and see a consistent snapshot; writes go through one writer at a time (serialised inside a process, and by SQLite across processes).
-- Every write batch is one transaction. A write that cannot get the lock within the busy timeout fails with `Locked`, which callers may retry.
-- Indexing runs also hold the shared index lock (`.workbench/run/index.lock`, a file lock), so two runs never interleave; short writes such as an annotation do not need it and just use the busy timeout.
-- Full-text search uses SQLite's FTS5.
-- The file lives in `.workbench/data/` (git-ignored with the rest of `.workbench/`), directory `0700`, file `0600`.
 
 ### Memgraph
 
@@ -88,10 +80,19 @@ Opening storage is part of the start-up of both MCP modes (`SPEC-core.md`, "buil
 - Concurrency across processes is handled by the server. The shared index lock still applies to indexing runs.
 - Search: no full-text engine is assumed; annotation and code search fall back to a case-insensitive contains-scan with a result limit (Assumption 5).
 
+### SQLite
+
+- One database file, opened in **WAL mode** with a 5 second busy timeout, foreign keys on and `synchronous=NORMAL`.
+- Readers use their own connections and see a consistent snapshot; writes go through one writer at a time (serialised inside a process, and by SQLite across processes).
+- Every write batch is one transaction. A write that cannot get the lock within the busy timeout fails with `Locked`, which callers may retry.
+- Indexing runs also hold the shared index lock (`.workbench/run/index.lock`, a file lock), so two runs never interleave; short writes such as an annotation do not need it and just use the busy timeout.
+- Full-text search uses SQLite's FTS5.
+- The file lives in `.workbench/data/` (git-ignored with the rest of `.workbench/`), directory `0700`, file `0600`.
+
 ### Migrations
 
-- Every module registers `Migration { module, version, sqlite, memgraph }` steps. Versions are per module and only go up.
-- The schema versions are stored in the backend itself. Applying a module's pending steps is atomic where the backend allows it (SQLite: one transaction; Memgraph: one transaction per step, recorded after it succeeds).
+- Every module registers `Migration { module, version, memgraph, sqlite }` steps. Versions are per module and only go up.
+- The schema versions are stored in the backend itself. Applying a module's pending steps is atomic where the backend allows it (Memgraph: one transaction per step, recorded after it succeeds; SQLite: one transaction).
 - Two processes opening at the same time cannot both migrate: the second waits for the first, then sees nothing to do.
 - There are no down-migrations in the first release.
 
@@ -107,13 +108,13 @@ Opening storage is part of the start-up of both MCP modes (`SPEC-core.md`, "buil
 `graph_query` lets an agent ask anything the graph can answer, in the language of the configured backend. Because the language is free-form, **read-only enforcement and a documented schema** are what make it safe and usable.
 
 **The query schema.** The tables or graph labels an agent queries are a documented, versioned surface, separate from the adapters' internal storage. `SPEC-graph.md` defines its content; this spec requires:
-- *SQLite:* read-only SQL **views** (for example `q_nodes` and `q_edges`) with stable column names, and nothing else visible to the query connection.
 - *Memgraph:* node labels, relationship types and property names that match the same documented model.
+- *SQLite:* read-only SQL **views** (for example `q_nodes` and `q_edges`) with stable column names, and nothing else visible to the query connection.
 - `graph_schema` returns the dialect (`sql` or `cypher`), the schema (kinds, properties, relationship types, with a few example queries for that dialect) and its version, so an agent knows what it may write.
 
 **Read-only, in two layers.**
-1. *SQLite:* queries run on a **separate connection opened read-only** with `query_only` on, an authoriser that allows only `SELECT` and reads from the query views, a single statement per call, a time limit (10 seconds by default) and a row limit.
-2. *Memgraph:* queries run in a read transaction after a **guard** that tokenises the Cypher (so strings and comments cannot hide a write) and allows only read clauses (`MATCH`, `OPTIONAL MATCH`, `WHERE`, `WITH`, `RETURN`, `UNWIND`, `ORDER BY`, `SKIP`, `LIMIT`) and a list of safe functions, and rejects everything else: `CREATE`, `MERGE`, `SET`, `DELETE`, `REMOVE`, `DROP`, `FOREACH`, `LOAD CSV`, procedure calls (`CALL`) and more than one statement.
+1. *Memgraph (the default):* queries run in a read transaction after a **guard** that tokenises the Cypher (so strings and comments cannot hide a write) and allows only read clauses (`MATCH`, `OPTIONAL MATCH`, `WHERE`, `WITH`, `RETURN`, `UNWIND`, `ORDER BY`, `SKIP`, `LIMIT`) and a list of safe functions, and rejects everything else: `CREATE`, `MERGE`, `SET`, `DELETE`, `REMOVE`, `DROP`, `FOREACH`, `LOAD CSV`, procedure calls (`CALL`) and more than one statement.
+2. *SQLite:* queries run on a **separate connection opened read-only** with `query_only` on, an authoriser that allows only `SELECT` and reads from the query views, a single statement per call, a time limit (10 seconds by default) and a row limit.
 3. Both: a row limit (200 by default, 5 000 at most), a time limit, and a limit on the size of the result.
 
 **Results.** Columns and rows, with each value a string, number, boolean, null, list or map. Errors name the dialect and the problem (a rejected clause is named). The query text, the row count and the time are written to the session log in operational mode.
@@ -131,17 +132,17 @@ A read-only command (surface in `SPEC-cli.md`) that prints the backend, where it
 ## Tech Stack
 
 - Rust 2024, `tokio`, `serde`, `secrecy`, `thiserror` (already workspace dependencies).
-- New dependencies, each needing approval: a SQLite binding with the bundled library and FTS5 (for example `rusqlite` with `bundled`, run on blocking threads) and a Bolt client for Memgraph (for example `neo4rs`).
-- A way to run Memgraph locally for tests (a `docker compose` file or a Makefile target) is a new file and needs approval.
+- New dependencies, each needing approval: a Bolt client for Memgraph (for example `neo4rs`) and a SQLite binding with the bundled library and FTS5 (for example `rusqlite` with `bundled`, run on blocking threads).
+- A way to run Memgraph locally and in CI (a `docker compose` file or a Makefile target, and a Memgraph service container in the CI job) is new and needs approval. The repository's `.gitignore` already reserves `/docker/` for a Memgraph bind mount.
 
 ## Commands
 
 ```
 Build:    cargo build --workspace
-Test:     cargo test --workspace                       # SQLite adapter and the engine
+Test:     cargo test --workspace                       # the engine and the SQLite adapter
 Lint:     cargo clippy --workspace --all-targets -- -D warnings
 Format:   cargo fmt --all
-Memgraph: cargo test --workspace -- --ignored          # needs a local Memgraph; run by hand
+Memgraph: cargo test --workspace -- --ignored          # needs a local Memgraph (docker run -p 7687:7687 memgraph/memgraph); CI runs it with a service container
 Status:   cargo run -p workbench -- storage status
 ```
 
@@ -157,8 +158,8 @@ lib/engine/src/storage/
 
 lib/adapters/src/storage/
 ├── mod.rs         # open(&StorageConfig) -> Box<dyn Storage>: picks the adapter
+├── memgraph/      # the default adapter, built first: Bolt connection, namespace handling, migrations, one file per port
 ├── sqlite/        # connection setup (WAL, timeout), migrations, one file per port
-├── memgraph/      # Bolt connection, namespace handling, migrations, one file per port
 └── conformance.rs # the shared test suite, run against both adapters
 
 services/cli/src/commands/storage.rs   # `workbench storage status`
@@ -175,8 +176,8 @@ A migration is data the registry can order and check, and each backend gets its 
 pub struct Migration {
     pub module: &'static str,
     pub version: u32,
-    pub sqlite: &'static str,
     pub memgraph: &'static [&'static str],
+    pub sqlite: &'static str,
 }
 ```
 
@@ -186,6 +187,7 @@ Follow the existing conventions: one error enum per concern, doc comments on eve
 
 - **Engine unit tests:** migrations apply in order per module, never twice, and a database newer than the registry is refused; the error type never carries a secret.
 - **Conformance suite** (`lib/adapters/src/storage/conformance.rs`): one set of tests for every operation of every port (round trips, batch atomicity, view deletion, ordering, stale and orphaned states), written once and run against **each** adapter. SQLite runs in the normal test run; Memgraph runs with `--ignored` against a local server. A new port operation without a conformance test is not accepted.
+- **Memgraph tests** (`--ignored`, against a running server; CI runs them): the whole conformance suite; namespaces keep two workspaces apart; every statement is parameterised; an unreachable server fails with the hint message; the password never appears in output.
 - **SQLite tests:** WAL is on; two processes writing at once both succeed or one gets `Locked`; a reader sees a consistent snapshot while a writer is mid-batch; the file is `0600` in a `0700` directory.
 - **Free-form query tests** (both backends): every write attempt is rejected and the database is unchanged afterwards (`INSERT`, `UPDATE`, `DELETE`, `DROP`, `ATTACH`, `PRAGMA` writes, `CREATE`, `MERGE`, `SET`, `CALL`, `LOAD CSV`, a write hidden in a comment or a string, a second statement); a valid read returns the same logical answer on both backends for the same data; the row, time and size limits apply; parameters are never joined into the text; `graph_schema` lists exactly the query surface and nothing internal.
 - **Partition tests:** writing, rebuilding or deleting one project's partition leaves the others byte-for-byte unchanged; replacing the overview leaves every project partition unchanged; deleting a project removes the overview edges that pointed at it.
@@ -202,12 +204,12 @@ Follow the existing conventions: one error enum per concern, doc comments on eve
 
 ## Success Criteria
 
-1. With no `storage` block, a fresh workspace uses SQLite at `.workbench/data/workbench.db`, created `0600` in a `0700` directory.
-2. The conformance suite passes on SQLite in the normal run and on Memgraph with `--ignored`, with identical results.
+1. With no `storage` block, a fresh workspace uses Memgraph at `localhost:7687`. With `storage.backend: sqlite` it uses `.workbench/data/workbench.db`, created `0600` in a `0700` directory.
+2. The conformance suite passes on Memgraph (with `--ignored`, against a running server, and in CI) and on SQLite (in the normal run), with identical results.
 3. The CLI, the background server and the watcher use one SQLite file at the same time without corruption; a busy write retries or reports `Locked`.
 4. Two indexing runs never write at once; the second waits for the first.
 5. A database from a newer version is refused with the version numbers and is left unchanged; an older one is migrated, once, even if two processes open it together.
-6. Opening storage fails with a message naming the backend and its location when Memgraph cannot be reached, and the MCP server does not start.
+6. Opening storage fails with a message naming the backend and its location when Memgraph cannot be reached, with the hint to start Memgraph or set `storage.backend: sqlite`, and the MCP server does not start.
 7. The Memgraph password is read from the named environment variable only when connecting, and appears in no output or log.
 8. Each project's graph is stored, rebuilt and deleted on its own without touching another project's; the overview of cross-project connections is a separate partition per view, replaced as a unit; deleting a project removes its partition and the overview edges pointing at it; deleting a view removes exactly that view's data.
 9. `graph_query` runs a free-form read-only query in the backend's language over the documented schema; no write attempt of any kind changes the database; limits apply; `graph_schema` names the dialect and the schema.
@@ -218,6 +220,7 @@ Follow the existing conventions: one error enum per concern, doc comments on eve
 
 - `workbench storage reset` and a backup or export command.
 - Down-migrations.
+- Use Memgraph's own text indexes for `search_code` and annotation search, instead of the contains-scan.
 - A backend-neutral graph query language, so `graph_query` reads the same on SQLite and Memgraph.
 
 ## Open Questions
