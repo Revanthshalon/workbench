@@ -6,7 +6,8 @@ The Workbench MCP server, as a library crate. It has no executable of its own: t
 workbench context check               # operational-support: check the connections first
 workbench mcp start [--mode <mode>]    # run the server in the background
 workbench mcp status                   # what is running
-workbench mcp logs -f                  # follow the log
+workbench mcp logs -f                  # follow the server log
+workbench mcp logs --sessions          # operational-support: list per-session logs
 workbench mcp restart                  # reload the configs; connected platforms keep working
 workbench mcp stop
 ```

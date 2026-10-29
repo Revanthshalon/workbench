@@ -24,6 +24,7 @@ Depends on [`workspace`](SPEC-workspace.md) (approved). Used by [`cli`](SPEC-cli
 5. There is no hot reload. Changing a config means `workbench mcp restart`.
 6. *(Confirmed)* The MCP SDK is the official Rust SDK (`rmcp`); its version is pinned when the dependency is added. It is used with a custom transport over the socket (to be confirmed when the dependency is added).
 7. Unix-like systems (macOS, Linux) first. A Windows transport (named pipes) is not in this spec.
+8. *(Confirmed)* The per-session log file **is** the audit record. There is no separate copy in the storage backend. It is a JSON Lines file (one event per line) so that other modules can read it; `workbench mcp logs --session` renders it for people (`--raw` shows the lines as written). `SPEC-audit.md` defines the event format.
 
 ## Objective
 
@@ -48,7 +49,7 @@ All take `--workspace <DIR>` (default: search upward for `.workbench/`) and, whe
 | `workbench mcp stop [--mode M \| --all]` | Asks the server to shut down cleanly and waits. Connected shims keep waiting for it (see Shim). |
 | `workbench mcp restart [--mode M]` | `stop` then `start`. Reloads the configs. Connected shims reconnect on their own. |
 | `workbench mcp status [--mode M]` | For each running server: mode, pid, uptime, socket, number of connected clients, log path. Removes stale pid files it finds. |
-| `workbench mcp logs [--mode M] [-f] [-n N]` | Prints the last `N` lines (default 50) of the server's log; `-f` keeps following. Works after the server has stopped. |
+| `workbench mcp logs [--mode M] [--session ID \| --sessions] [-f] [-n N]` | By default prints the last `N` lines (default 50) of the mode's latest server log; `-f` keeps following. `--sessions` lists the session logs (session id, start time, context); `--session ID` prints that session's log, rendered for reading (`--raw` prints the JSON Lines as written). Works after the server has stopped. |
 | `workbench mcp connect [--mode M] [--start]` | The stdio shim for AI platforms: relays between stdin/stdout and the server. Never writes anything to stdout except MCP messages. With no server running it exits with `no <mode> server running; run 'workbench mcp start --mode <mode>'`. `--start` starts one first, and is allowed for `developer-support` only. |
 
 ### Modes and what they load
@@ -84,9 +85,24 @@ A failed context check is reported like any other start-up failure, naming each 
 |---|---|
 | `.workbench/run/mcp-<mode>.sock` | The server's Unix socket. Directory mode `0700`, socket mode `0600`: only the same user can connect. |
 | `.workbench/run/mcp-<mode>.pid` | The server's pid. A pid file whose process is gone is stale and is removed by `start` and `status`. |
-| `.workbench/logs/mcp-<mode>.log` | The server's log: timestamped lines with a level. Rotated by size (10 MB, 3 files kept). Never contains a secret. |
+| `<logs.dir>/server-<mode>-<YYYYMMDD-HHMMSS>.log` | The server's own log, one file per server start: start-up, context check results, connections, restarts, errors. Timestamped lines with a level. Never contains a secret. |
+| `<logs.dir>/sessions/<session-id>.log` | `operational-support` only: one file per session, the audit record of what happened in it (see Logs). |
 
 There is no TCP or HTTP listener. Nothing is reachable from the network.
+
+### Logs
+
+| Log | Written when | Contains |
+|---|---|---|
+| **Server log** (`server-<mode>-<timestamp>.log`) | Always. A new file for every server start, so no rotation is needed. | Start-up steps, the context check result, socket and connection events, restarts, shutdown, errors. |
+| **Session log = the audit record** (`sessions/<session-id>.log`) | `operational-support` only. One file per session. | A record of the session, as JSON Lines: when it began and ended, the context it started in, each tool call (name, arguments, duration, outcome and a short result summary), context switches (with the check result), and errors, including connections that went down. |
+
+- The directory is `logs.dir` in the server config, relative to the workspace root or absolute; the default is `.workbench/logs`. `developer-support` never reads the server config, so it always uses the default directory and writes only server logs.
+- The session log is the **only** audit record: nothing is copied to the storage backend. The server only appends to it and never rewrites or deletes events. It is JSON Lines so `flow-memory` and other readers can parse it; `workbench mcp logs --session ID` renders it for people and `--raw` prints the lines as written. The event format is defined in `SPEC-audit.md`.
+- A session is identified by the shim's token, so a session that continues across a `restart` keeps appending to the same file.
+- `workbench mcp logs` finds the directory the same way. For `operational-support` it reads `logs.dir` from the server config; if the config cannot be read it says so and falls back to the default directory.
+- Logs can hold query results and log lines from production systems, so the directory is created `0700` and every file `0600`. No secret ever appears in a log: secrets are never exposed outside the point where a connection is opened.
+- There is no rotation and no automatic cleanup in the first release; see the Roadmap.
 
 ### The socket and the shim
 
@@ -97,7 +113,7 @@ After a client connects, the first message tells the server what it is:
 The shim:
 - generates its session token once, and sends it each time it connects;
 - relays bytes between its stdin/stdout and the socket;
-- remembers the platform's `initialize` request and `initialized` notification. If the server goes away and comes back (a `restart`), the shim reconnects (retrying for up to 30 seconds), **replays that handshake** to the new server, swallows the new server's reply, and carries on. The platform never sees the restart, except that requests that were in flight get a JSON-RPC error `server restarting, retry`;
+- remembers the platform's `initialize` request and `initialized` notification. If the server goes away and comes back (a `restart`), the shim reconnects (retrying for up to 90 seconds), **replays that handshake** to the new server, swallows the new server's reply, and carries on. The platform never sees the restart, except that requests that were in flight get a JSON-RPC error `server restarting, retry`;
 - exits with a clear message on stderr, and a non-zero code, if the server does not come back in time.
 
 ### Sessions and state
@@ -131,6 +147,8 @@ Conventions every module follows:
 # .workbench/mcp/config.yml   (git-ignored with the rest of .workbench/)
 version: 1
 default_context: staging        # required; owned by SPEC-contexts
+logs:
+  dir: .workbench/logs          # optional; where server and session logs are written
 contexts:                       # name -> path of that context's own config file
   production: contexts/production.yml
   staging:    contexts/staging.yml
@@ -208,7 +226,7 @@ services/mcp/src/            # library crate `workbench-mcp`, no binary
 ├── shim.rs        # stdio <-> socket relay with handshake replay and reconnect
 ├── lifecycle.rs   # run files, readiness, stale pid cleanup, detaching the background process
 ├── control.rs     # the control connection: status and stop
-├── logs.rs        # log file writer, rotation, tail and follow
+├── logs.rs        # server and per-session log files, tail and follow, session listing
 └── modules/       # one file per module: its tools and prompts mapped onto engine use cases
 
 services/cli/src/cli.rs      # + the `mcp` command group (SPEC-cli)
@@ -265,12 +283,13 @@ Follow the existing conventions: one error enum per concern, doc comments on eve
   - Two shims at once keep separate sessions.
   - `connect` with no server running exits non-zero with the `start` hint; its stdout stays empty.
   - The socket directory is `0700` and the socket `0600`.
-  - `logs` prints the last lines and `-f` follows new ones; a known secret value never appears in the log, stdout or stderr, even at the most verbose log level.
+  - Session log as audit record: every tool call, context switch and error in a session appears as one JSON line in that session's file; the lines parse; events are only ever appended; nothing about the session is written to the storage backend.
+  - Logs: `logs` prints the last lines of the latest server log and `-f` follows new ones; every `start` creates a new server log; in `operational-support` each session gets its own file under `logs.dir` (read from the server config), and a session that spans a `restart` keeps appending to the same file; `developer-support` writes no session logs and uses the default directory; `--sessions` and `--session` list and print them; the logs directory is `0700` and the files `0600`; a known secret value never appears in any log, stdout or stderr, even at the most verbose log level.
 - Each row of the mode table, each command and each rule in "Registry" has a test.
 
 ## Boundaries
 
-- **Always:** keep stdout of `connect` for MCP messages only; log to the file (or stderr for `serve`); fail fast before reporting ready; report every configuration problem together; derive tool schemas from the Rust types; create run files with the permissions above.
+- **Always:** keep stdout of `connect` for MCP messages only; log to the files described under Logs (or stderr for `serve`); create the logs directory `0700` and every log file `0600`; fail fast before reporting ready; report every configuration problem together; derive tool schemas from the Rust types; create run files with the permissions above.
 - **Ask first:**
   - Adding a dependency or tokio feature: `rmcp`, a logging crate, `static_assertions`, the extra tokio features.
   - Adding a mode, or changing what an existing mode registers.
@@ -284,7 +303,8 @@ Follow the existing conventions: one error enum per concern, doc comments on eve
 2. A garbage server config file does not affect `developer-support`.
 3. `start --mode operational-support` without a valid server config exits non-zero, names the file and every problem, and leaves no server, pid file or socket. A valid config starts it.
 4. `--mode operational-onboarding` and `--mode developer-onboarding` exit with the "planned" message.
-5. `status` shows running servers with their client counts and removes stale pid files; `stop` and `restart` do what the table says; `logs -f` follows the log.
+5. `status` shows running servers with their client counts and removes stale pid files; `stop` and `restart` do what the table says; `logs -f` follows the log, `logs --sessions` lists session logs and `logs --session ID` prints one.
+    - In `operational-support` each session has its own log file in the directory given by `logs.dir` in the server config; a session that spans a restart keeps one file. Every server start has its own server log. Log files are owner-only and never contain a secret.
 6. After `restart`, a connected shim reconnects and the platform keeps working without being restarted; a request in flight gets a `server restarting` error instead of hanging.
 7. Two clients connected at once have separate sessions and separate active contexts.
 8. The socket is reachable only by the owner (`0600` in a `0700` directory), and no network port is opened.
@@ -302,9 +322,8 @@ Follow the existing conventions: one error enum per concern, doc comments on eve
 
 - Streamable HTTP as an opt-in listener (`workbench mcp start --http`), localhost only, with a bearer token and `Origin` checking. Until then there is no network listener.
 - A Windows transport (named pipes).
+- Log retention: deleting or archiving old server and session logs (for example `workbench mcp logs --prune`). Until then logs are kept until a person removes them.
 
 ## Open Questions
 
-1. **Auto-start from `connect`:** I made `connect --start` an opt-in flag that works for `developer-support` only, so a platform can bring up the safe mode on its own, while `operational-support` always needs an explicit `workbench mcp start`. Is that right, or should `connect` never start a server?
-2. **Reconnect window:** the shim waits up to 30 seconds for a restarted server before giving up. Is that sensible?
-3. **Log rotation:** 10 MB per file, 3 files kept. Is that enough, or do you want a different size or an unlimited log?
+None. The questions from the first draft are answered and folded into the sections above.

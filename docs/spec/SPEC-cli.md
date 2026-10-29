@@ -165,10 +165,11 @@ context: staging
 
 ### `workbench mcp <command>`
 
-Runs and manages the MCP server, specified in `SPEC-core.md`: `start [--mode M] [--context C]`, `serve`, `stop`, `restart`, `status`, `logs [-f] [-n N]` and `connect`. They are listed here so the whole command surface is in one place. Points that belong to the CLI:
+Runs and manages the MCP server, specified in `SPEC-core.md`: `start [--mode M] [--context C]`, `serve`, `stop`, `restart`, `status`, `logs [--session ID [--raw] | --sessions] [-f] [-n N]` and `connect`. They are listed here so the whole command surface is in one place. Points that belong to the CLI:
 
 - `mcp connect` is what AI platforms run. It never prints the banner, progress text or errors to stdout: stdout carries MCP messages only, and diagnostics go to stderr.
 - `mcp logs -f` stops cleanly on Ctrl-C with exit code `0`.
+- `mcp logs --sessions` prints one line per session log: session id, start time and start context; `--session ID` prints that log rendered for reading (`--raw` prints the JSON Lines as written). A session log is the audit record of the session. Session logs exist for `operational-support` only, in the directory set by `logs.dir` in the server config.
 - The commands find the workspace like all the others, and fail with the usual `no .workbench/ found` error outside one.
 
 ### Common behaviour
