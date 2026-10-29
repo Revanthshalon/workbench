@@ -1,6 +1,6 @@
 # engine
 
-The core of Workbench: domain types, ports and use cases. It does no I/O, and has no CLI or filesystem code. Both [`workbench`](../../services/cli/README.md) and [`workbench-mcp`](../../services/mcp/README.md) depend on it.
+The core of Workbench: domain types, ports and use cases. It does no I/O, and has no CLI or filesystem code. The [`workbench` binary](../../services/cli/README.md), which is both the CLI and the MCP server, depends on it. Static templates the use cases fill in, such as `templates/incident-report.md`, live here.
 
 | Module | Contents |
 |--------|----------|

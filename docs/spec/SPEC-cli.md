@@ -2,12 +2,12 @@
 
 Module `cli` from the [capability map](capability-map.md). Status: **approved.**
 
-Depends on [`workspace`](SPEC-workspace.md) (approved). The `index` and `semantic` command groups also depend on `graph` and `semantic-layer`; they are specified here as the command surface and wired once those modules exist.
+Depends on [`workspace`](SPEC-workspace.md) (approved) and, for the `mcp` command group, [`core`](SPEC-core.md). The `index` and `semantic` command groups also depend on `graph` and `semantic-layer`; they are specified here as the command surface and wired once those modules exist.
 
 ## Decisions
 
 1. The binary is `workbench` (package `workbench`, in `services/cli`).
-2. This module defines the whole `workbench` command surface for managing a workspace: `init`, `project add | list | remove`, `index` and `semantic add | revise | retract | list | show | prune | generate`. What indexing and annotations *do* is specified elsewhere (`SPEC-index.md`, `SPEC-graph.md`, `SPEC-semantic-layer.md`); this spec fixes how they are invoked, scoped and reported. `workbench lsp run` (`SPEC-lsp.md`) and `workbench platform setup` (`SPEC-platform-setup.md`) have their own specs. Platform setup is its own command; `init` does not take `--platform`.
+2. This module defines the whole `workbench` command surface for managing a workspace: `init`, `project add | list | remove`, `index`, `watch`, `context check` and `semantic add | revise | retract | list | show | prune | generate`. What indexing and annotations *do* is specified elsewhere (`SPEC-index.md`, `SPEC-graph.md`, `SPEC-semantic-layer.md`); this spec fixes how they are invoked, scoped and reported. The `mcp` command group (`start`, `serve`, `stop`, `restart`, `status`, `logs`, `connect`) is listed here and specified in `SPEC-core.md`; the MCP server has no executable of its own. `workbench lsp run` (`SPEC-lsp.md`) and `workbench platform setup` (`SPEC-platform-setup.md`) have their own specs. Platform setup is its own command; `init` does not take `--platform`.
 3. The CLI is a *driving adapter*: it parses arguments, calls engine use cases, and prints results. Rules live in the engine; file access lives in `lib/adapters`.
 4. `.workbench/` is entirely git-ignored; `init` adds it to the workspace root's `.gitignore`.
 5. `init` also generates the server config template at `.workbench/mcp/config.yml` and one context config template per default context at `.workbench/mcp/contexts/<name>.yml` (`production`, `staging`, `testing`). Its schema is defined in `SPEC-core.md`, so that step is built after `core`'s model exists.
@@ -58,7 +58,11 @@ Refuses to run if `.workbench/config.yml` already exists, and changes nothing in
 
 ### `workbench platform setup [--platform <P>[,<P>...]]`
 
-Defined in `SPEC-platform-setup.md`. Listed here so the command surface is in one place: it configures the AI platform's own LSP integration (default platforms: `copilot-cli,claude-code`) from the workspace config, so it needs a workspace and fails with the usual `no .workbench/ found` error otherwise.
+Defined in `SPEC-platform-setup.md`. Listed here so the command surface is in one place: it configures the AI platform's own LSP integration (default platforms: `copilot-cli,claude-code`) from the workspace config, so it needs a workspace and fails with the usual `no .workbench/ found` error otherwise. It does not install hooks.
+
+### `workbench platform hooks install | uninstall | list [--platform <P>[,<P>...]]`
+
+Also defined in `SPEC-platform-setup.md`. A separate command, run only when asked: `install` adds the platform's hooks for `workbench watch` (start, flush, stop) and `uninstall` removes exactly those; `list` shows which are installed. Default platforms: `copilot-cli,claude-code`.
 
 ### `workbench project add <PATH> [options]`
 
@@ -117,6 +121,25 @@ Builds the AST data for the projects in the workspace and keeps it up to date. I
 - The MCP `reindex` tool runs the same use case, so both produce the same result.
 - Exit codes follow "Common behaviour"; how partial failures (some files fail to parse) are counted is defined in `SPEC-index.md`.
 
+### `workbench watch [start] | stop | status | logs | flush`
+
+Keeps the index fresh while code changes, including edits made by AI tools. The indexing itself is the incremental use case of `workbench index` (`SPEC-index.md`); `watch` only decides *when* to run it.
+
+| Command | Behaviour |
+|---|---|
+| `workbench watch [start] [--project <ID>]...` | Starts the watcher in the background and returns once it is running, printing the pid and log path. Safe to call repeatedly: if one is already running it says so and exits `0`, so a hook can call it at every session start. `--project` limits it to those projects (default: all). |
+| `workbench watch stop` | Stops the watcher cleanly, finishing the batch in progress. Exits `0` if none is running. |
+| `workbench watch status` | Running or not, pid, uptime, projects watched, time of the last index run, files indexed since start, changes waiting, and the last error. |
+| `workbench watch logs [-f] [-n N]` | Prints (or follows) the watcher's log. Works after it has stopped. |
+| `workbench watch flush` | Indexes any pending changes right now and waits until done, so the next query sees a just-made edit. If no watcher is running it runs one incremental index itself, so a hook can call it safely. |
+
+- **Process model:** a thread cannot outlive the CLI command, so `watch` starts a detached background process, managed the way `workbench mcp start` is (pid file and a control socket in `.workbench/run/`, directory `0700`, socket `0600`); the watching runs on a thread inside it.
+- **What it watches:** the paths of the workspace's projects, ignoring `.workbench/`, `.git/`, anything a project's `.gitignore` excludes, and the usual dependency and build folders (`node_modules`, `.venv`, `target`, `dist`, `__pycache__`). Changes are batched with a short delay (500 ms by default) so a burst of edits is indexed once.
+- **Needs:** the workspace config and the storage backend only. No server config, no secrets, so it works with `developer-support`.
+- **Never:** it never calls an LLM and never changes a project's files. It shares one lock with `workbench index` and the MCP `reindex` tool, so only one indexing run writes at a time; the others wait.
+- **Log:** `.workbench/logs/watch-<YYYYMMDD-HHMMSS>.log`, one file per start, owner-only, never containing a secret.
+- **AI platform hooks:** hooks that run `workbench watch` at session start, `workbench watch flush` after an edit and `workbench watch stop` at session end are installed only on request, by `workbench platform hooks install` (formats per platform in `SPEC-platform-setup.md`). `workbench platform setup` never installs hooks. Platforms without hooks can run the commands by hand.
+
 ### `workbench semantic <command>`
 
 Adds meaning to the indexed AST. Commands that act on a node select it with the flags in Further decision 6.
@@ -142,6 +165,36 @@ Adds meaning to the indexed AST. Commands that act on a node select it with the 
   - `--max-nodes <N>` caps how many nodes one run sends. There is no cap unless it is given, so run `--dry-run` first on a large workspace.
   - Prints what it sent (node count, provider, model) and what it created.
 
+### `workbench context check [--context <NAME>]`
+
+Checks that the connections of a context work, so problems show up before the MCP server is started. `--context` defaults to `default_context` from the server config. It reads the server config and the context's own config file, so it fails with a clear message if either is missing or still holds placeholders.
+
+For each system the context configures, it opens a connection with that context's credentials and runs the smallest harmless request, then prints one line per system:
+
+```text
+context: staging
+  kubectl    ok      12 ms   cluster reachable, namespace 'billing' found
+  postgres   ok      31 ms   connected as readonly
+  redis      failed          connection refused (cache.staging.internal:6379)
+  kafka      skipped         not configured
+```
+
+- Checks only the one context asked for, never the others.
+- Only systems the context configures are checked; the rest are `skipped`.
+- Exit code `0` if every checked system is `ok`, `1` if any failed. Messages never contain a secret.
+- It changes nothing in any system, and it does **not** verify that the credentials are read-only: it only proves the connection works. Read-only is enforced by the tools themselves (`operations` and `data` specs).
+- What each check does for each system is specified in `SPEC-contexts.md`.
+- `workbench mcp start --mode operational-support` runs this same check for its start context and refuses to start if it fails, so running it beforehand is optional but recommended.
+
+### `workbench mcp <command>`
+
+Runs and manages the MCP server, specified in `SPEC-core.md`: `start [--mode M] [--context C]`, `serve`, `stop`, `restart`, `status`, `logs [--session ID [--raw] | --sessions] [-f] [-n N]` and `connect`. They are listed here so the whole command surface is in one place. Points that belong to the CLI:
+
+- `mcp connect` is what AI platforms run. It never prints the banner, progress text or errors to stdout: stdout carries MCP messages only, and diagnostics go to stderr.
+- `mcp logs -f` stops cleanly on Ctrl-C with exit code `0`.
+- `mcp logs --sessions` prints one line per session log: session id, start time and start context; `--session ID` prints that log rendered for reading (`--raw` prints the JSON Lines as written). A session log is the audit record of the session. Session logs exist for `operational-support` only, in the directory set by `logs.dir` in the server config.
+- The commands find the workspace like all the others, and fail with the usual `no .workbench/ found` error outside one.
+
 ### Common behaviour
 
 | Topic | Rule |
@@ -165,6 +218,8 @@ services/cli/
 │   ├── main.rs        # wiring only: parse, build adapters, call engine, print
 │   ├── cli.rs         # clap types (driving adapter): Cli, Command, ProjectCommand, IndexArgs, SemanticCommand
 │   ├── output.rs      # formatting of results and errors
+│   ├── mcp/           # the MCP server and its life cycle (SPEC-core.md)
+│   ├── watch/         # the background index watcher (this spec; indexing rules in SPEC-index.md)
 │   └── utils/         # banner
 └── tests/
     └── cli.rs         # runs the built binary against temp directories
@@ -216,6 +271,7 @@ Follow the existing conventions: doc comments on every public item, no `unwrap` 
 - **Adapter tests** (in `lib/adapters`): detection against fixture directories (uv, poetry, angular with each lock file, ambiguous, empty); `.gitignore` handling (missing file, existing entry, existing file without a trailing newline).
 - **Integration tests** (`services/cli/tests/cli.rs`): run the real binary in a temp directory through the sequence `init`, `project add`, `list`, `remove`, and check the files and exit codes.
 - **LLM drafting and prune:** with a fake `LlmClient` port: no call is made without the flag, without `semantic.llm`, or with `--dry-run`; the missing-variable error names the variable; a person-written annotation is never overwritten; `prune --dry-run` removes nothing; `prune` without `--yes` asks first and refuses to run non-interactively; `prune` removes exactly the stale and orphaned entries it listed.
+- **Watcher:** with a fake file-event source: a burst of events becomes one index run; ignored paths trigger nothing; `watch` twice runs one watcher; `flush` returns only after pending changes are indexed and works when no watcher runs; `stop` finishes the batch in progress; the index lock makes a concurrent `index` wait. An integration test starts the real watcher in a temp workspace, edits a file, runs `flush`, and checks the index changed.
 - **Index and semantic commands:** engine tests with fake ports check that `--project`, `--changed` and `--full` map to the right request, that an unknown project or target fails with a hint, and that a `link` without `--to` is rejected. End-to-end runs of both groups are part of the integration test once `graph` and `semantic-layer` exist.
 - **Node flags:** `--file` without `--project`, `--symbol` without `--file`, and `link` without `--to-project` are rejected by argument parsing with a clear message.
 - Every row of the detection table and every error message in "Common behaviour" has a test.
@@ -223,8 +279,8 @@ Follow the existing conventions: doc comments on every public item, no `unwrap` 
 ## Boundaries
 
 - **Always:** change nothing on failure; print what was created or changed; validate with the engine, not in the CLI.
-- **Ask first:** adding a dependency (for example `assert_cmd`, a temp-directory crate, or the HTTP client for the `claude` and `ollama` adapters); running an external program for the `copilot-cli` provider; a `--force` flag; any command that writes outside the workspace root or the project paths; a `--json` output mode.
-- **Never:** call an LLM without the explicit flag and a `semantic.llm` config; send anything other than indexed source nodes; print or log the API key; delete a person-written annotation without the person running `retract` or `prune`; modify a project's source files (indexing and annotating read them only); install git hooks or file watchers (those belong to `SPEC-index.md`); run project code or package managers during detection; read secrets; overwrite `INIT-MEMORY.md`; delete a memory folder without `--purge-memory`.
+- **Ask first:** adding a dependency (for example `assert_cmd`, a file-watching crate such as `notify`, a temp-directory crate, or the HTTP client for the `claude` and `ollama` adapters); running an external program for the `copilot-cli` provider; a `--force` flag; any command that writes outside the workspace root or the project paths; a `--json` output mode.
+- **Never:** call an LLM without the explicit flag and a `semantic.llm` config; send anything other than indexed source nodes; print or log the API key; delete a person-written annotation without the person running `retract` or `prune`; modify a project's source files from a CLI command (indexing, watching and annotating only read them; code is edited only by the `edit` tools of the `developer-support` MCP server); install git hooks (the watcher is started only by `workbench watch`); run project code or package managers during detection; read secrets; overwrite `INIT-MEMORY.md`; delete a memory folder without `--purge-memory`.
 
 ## Success Criteria
 
@@ -238,7 +294,9 @@ Follow the existing conventions: doc comments on every public item, no `unwrap` 
 8. `workbench semantic add` attaches an annotation to an indexed node; `list --stale` shows annotations whose node changed after the next `index`; `retract` removes one; a target that is not indexed fails with a hint. A person-written annotation also appears in `.workbench/memory/<id>/annotations.yml`; an agent-written one does not.
 9. `workbench semantic prune` lists and then removes exactly the stale and orphaned entries in scope, does nothing under `--dry-run`, and refuses to run non-interactively without `--yes`.
 10. `workbench semantic generate` and `index --annotate` call the LLM only when both the flag and `semantic.llm` are present, record their output as agent-written, and never touch a person-written annotation; `--dry-run` makes no call.
-11. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass.
+11. `workbench context check` prints one line per configured system with its status, checks only the named context, exits `1` when any check fails, never prints a secret, and fails clearly when the server config or the context file is missing or still holds placeholders.
+12. `workbench watch` starts one background watcher (a second call says so and exits `0`), re-indexes edited files within the batch delay, ignores the paths listed above, and `watch stop`, `status`, `logs` and `flush` behave as described; `flush` leaves the index current when it returns, with or without a running watcher; the watcher makes no LLM call and changes no project file.
+13. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass.
 
 ## Roadmap (not in this spec)
 

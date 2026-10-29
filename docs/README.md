@@ -7,4 +7,4 @@
 | [`lld`](lld/README.md) | Low-level design |
 | [`spec`](spec/README.md) | Specifications |
 
-Product overview: [top-level README](../README.md). MCP tool surface: [`services/mcp`](../services/mcp/README.md).
+Product overview: [top-level README](../README.md). MCP tool surface: [`services/cli`](../services/cli/README.md).

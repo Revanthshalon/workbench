@@ -9,22 +9,21 @@ An MCP server (and companion CLI) that turns your services, logs, config and run
 | Path | Crate / binary | Purpose |
 |------|----------------|---------|
 | [`lib/engine`](lib/engine/README.md) | `engine` | Core: domain, ports, use cases |
-| [`services/mcp`](services/mcp/README.md) | `workbench-mcp` | The MCP server |
-| [`services/cli`](services/cli/README.md) | `workbench` | Command-line companion (`init`) |
+| [`services/cli`](services/cli/README.md) | `workbench` | The one binary: the CLI and the MCP server (`workbench mcp`) |
 | [`docs`](docs/README.md) | | ADRs, HLD, LLD, specs |
 
 ## Modes
 
-`workbench-mcp --mode <mode>` picks one bundle of tools, prompts and instructions per server process; the default is `developer-support`. To use several modes, register the server several times.
+`workbench mcp start --mode <mode>` picks one bundle of tools, prompts and instructions per server; the default is `developer-support`. To use several modes, run one server per mode; AI platforms connect to each with `workbench mcp connect`.
 
 | Mode | For | Status |
 |------|-----|--------|
 | `operational-support` | Incidents: logs → code flow → root cause → fix | MVP |
-| `developer-support` | Context for code changes from the service graph, combined with your LSP setup, context files, prompts and hooks | planned (default) |
+| `developer-support` | Context for code changes from the service graph and its semantic annotations (kept in the database), combined with your LSP setup, prompts and hooks | MVP (default) |
 | `operational-onboarding` | Do's and don'ts for operating the system, from the graph and your runbooks; no production access | planned |
 | `developer-onboarding` | A fast guided tour of the codebase | planned |
 
-See [`services/mcp/README.md`](services/mcp/README.md) for the tool and prompt surface.
+See [`services/cli/README.md`](services/cli/README.md) for the commands and the MCP tool and prompt surface.
 
 ## Architecture
 
