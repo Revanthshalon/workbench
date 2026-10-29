@@ -1,6 +1,6 @@
 # Spec: core
 
-Module `core` from the [capability map](capability-map.md). Status: **draft (amended), awaiting review.** Amended after approval to change the run model (one binary, background server, stdio shim); everything about modes, the registry, the server config and secrets is unchanged.
+Module `core` from the [capability map](capability-map.md). Status: **approved.**
 
 Depends on [`workspace`](SPEC-workspace.md) (approved). Used by [`cli`](SPEC-cli.md), which hosts the `workbench mcp` commands and the server config template.
 

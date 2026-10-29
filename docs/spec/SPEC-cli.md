@@ -1,6 +1,6 @@
 # Spec: cli
 
-Module `cli` from the [capability map](capability-map.md). Status: **draft (amended), awaiting review.** Amended after approval to add the `mcp` command group (one binary, background server).
+Module `cli` from the [capability map](capability-map.md). Status: **approved.**
 
 Depends on [`workspace`](SPEC-workspace.md) (approved) and, for the `mcp` command group, [`core`](SPEC-core.md). The `index` and `semantic` command groups also depend on `graph` and `semantic-layer`; they are specified here as the command surface and wired once those modules exist.
 
