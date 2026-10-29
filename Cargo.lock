@@ -212,7 +212,3 @@ dependencies = [
  "clap",
  "engine",
 ]
-
-[[package]]
-name = "workbench-mcp"
-version = "1.0.0"

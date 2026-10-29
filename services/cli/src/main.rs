@@ -1,4 +1,4 @@
-//! `workbench`: command-line companion to `workbench-mcp`.
+//! `workbench`: command-line tool for Workbench, and the way to run its MCP server.
 
 use std::process::ExitCode;
 
