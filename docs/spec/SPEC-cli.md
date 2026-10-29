@@ -173,6 +173,7 @@ For each system the context configures, it opens a connection with that context'
 
 ```text
 context: staging
+  ssh        ok      40 ms   logged in as workbench on vm-staging.internal
   kubectl    ok      12 ms   cluster reachable, namespace 'billing' found
   postgres   ok      31 ms   connected as readonly
   redis      failed          connection refused (cache.staging.internal:6379)
@@ -181,7 +182,7 @@ context: staging
 ```
 
 - Checks only the one context asked for, never the others.
-- Only systems the context configures are checked; the rest are `skipped`.
+- Only systems the context configures are checked; the rest are `skipped`. Everything is reached through the context's VM over SSH, so if the `ssh` line fails the systems behind it are shown as `skipped` (`ssh failed`).
 - Exit code `0` if every checked system is `ok`, `1` if any failed. Messages never contain a secret.
 - It changes nothing in any system, and it does **not** verify that the credentials are read-only: it only proves the connection works. Read-only is enforced by the tools themselves (`operations` and `data` specs).
 - The `code` line checks, for each project, that the context's branch exists, that a worktree for it is at the branch's current commit, and that its index is current; if not it fails with the fix (`Run 'workbench context sync --context <NAME>'`).
