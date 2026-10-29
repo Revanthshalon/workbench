@@ -1,6 +1,6 @@
 # Spec: contexts
 
-Module `contexts` from the [capability map](capability-map.md). Status: **draft, awaiting review.**
+Module `contexts` from the [capability map](capability-map.md). Status: **approved.**
 
 Depends on [`core`](SPEC-core.md) (approved). Used by `operations` and `data` (they receive resolved connection settings from here), by [`cli`](SPEC-cli.md) (`workbench context check`) and by `audit`.
 
