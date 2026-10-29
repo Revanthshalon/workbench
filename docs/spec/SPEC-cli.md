@@ -7,7 +7,7 @@ Depends on [`workspace`](SPEC-workspace.md) (approved) and, for the `mcp` comman
 ## Decisions
 
 1. The binary is `workbench` (package `workbench`, in `services/cli`).
-2. This module defines the whole `workbench` command surface for managing a workspace: `init`, `project add | list | remove`, `index`, `watch`, `context check | sync` and `semantic add | revise | retract | list | show | prune | generate`. What indexing and annotations *do* is specified elsewhere (`SPEC-index.md`, `SPEC-graph.md`, `SPEC-semantic-layer.md`); this spec fixes how they are invoked, scoped and reported. The `mcp` command group (`start`, `serve`, `stop`, `restart`, `status`, `logs`, `connect`) is listed here and specified in `SPEC-core.md`; the MCP server has no executable of its own. `workbench lsp run` (`SPEC-lsp.md`) and `workbench platform setup` (`SPEC-platform-setup.md`) have their own specs. Platform setup is its own command; `init` does not take `--platform`.
+2. This module defines the whole `workbench` command surface for managing a workspace: `init`, `project add | list | remove`, `index`, `watch`, `storage status`, `context check | sync` and `semantic add | revise | retract | list | show | prune | generate`. What indexing and annotations *do* is specified elsewhere (`SPEC-index.md`, `SPEC-graph.md`, `SPEC-semantic-layer.md`); this spec fixes how they are invoked, scoped and reported. The `mcp` command group (`start`, `serve`, `stop`, `restart`, `status`, `logs`, `connect`) is listed here and specified in `SPEC-core.md`; the MCP server has no executable of its own. `workbench lsp run` (`SPEC-lsp.md`) and `workbench platform setup` (`SPEC-platform-setup.md`) have their own specs. Platform setup is its own command; `init` does not take `--platform`.
 3. The CLI is a *driving adapter*: it parses arguments, calls engine use cases, and prints results. Rules live in the engine; file access lives in `lib/adapters`.
 4. `.workbench/` is entirely git-ignored; `init` adds it to the workspace root's `.gitignore`.
 5. `init` also generates the server config template at `.workbench/mcp/config.yml` and one context config template per default context at `.workbench/mcp/contexts/<name>.yml` (`production`, `staging`, `testing`). Its schema is defined in `SPEC-core.md`, so that step is built after `core`'s model exists.
@@ -50,6 +50,7 @@ Creates, under `<DIR>` (default `.`):
 | Created | Content |
 |---|---|
 | `.workbench/config.yml` | `version: 1`, `projects: []` (the format in `SPEC-workspace.md`) |
+| `.workbench/memory/INIT-MEMORY.md` | An empty workspace-level context template for how the projects connect (`SPEC-workspace.md`) |
 | `.workbench/mcp/config.yml` | The server config template (`SPEC-core.md`); added once `core` defines it |
 | `.workbench/mcp/contexts/<name>.yml` | One context config template per default context (`production`, `staging`, `testing`); content owned by `SPEC-contexts.md` |
 | `<DIR>/.gitignore` | A `.workbench/` line appended; the file is created if missing; nothing is added twice |
@@ -73,6 +74,7 @@ Also defined in `SPEC-platform-setup.md`. A separate command, run only when aske
 | `--dependency-manager <poetry\|uv\|npm\|pnpm\|yarn\|bun>` | Default: detected. |
 | `--venv <PATH>` | Python only. Default: `.venv` if it exists in the project. |
 | `--activate <COMMAND>` | Command prefix to launch tools in the project. Default: derived from the dependency manager (`uv run`, `poetry run`), none for Angular. |
+| `--compose <PATH>` | The project's Docker Compose file, relative to the project. Default: the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` at the project root, if any. |
 | `--index` | Index the new project right after adding it (same as running `workbench index --project <id>`). A failed index does not undo the add. |
 
 Steps, all or nothing:
@@ -139,6 +141,14 @@ Keeps the index fresh while code changes, including edits made by AI tools. The 
 - **Never:** it never calls an LLM and never changes a project's files. It shares one lock with `workbench index` and the MCP `reindex` tool, so only one indexing run writes at a time; the others wait.
 - **Log:** `.workbench/logs/watch-<YYYYMMDD-HHMMSS>.log`, one file per start, owner-only, never containing a secret.
 - **AI platform hooks:** hooks that run `workbench watch` at session start, `workbench watch flush` after an edit and `workbench watch stop` at session end are installed only on request, by `workbench platform hooks install` (formats per platform in `SPEC-platform-setup.md`). `workbench platform setup` never installs hooks. Platforms without hooks can run the commands by hand.
+
+### `workbench storage status`
+
+A read-only check of the storage backend (`SPEC-storage.md`). It prints the backend (SQLite or Memgraph), where it is (a path or `host:port`), whether it answers and how fast, each module's schema version, and per view (the project working trees and each context) the counts of indexed files, nodes, edges and annotations, plus the file size for SQLite.
+
+- It needs only the workspace config, so it works with `developer-support`.
+- It changes nothing and applies no migrations; if the database is newer than this `workbench` it says so.
+- When the backend cannot be reached it exits `1` and names the backend and its location, with no secret in the message.
 
 ### `workbench semantic <command>`
 
@@ -310,7 +320,8 @@ Follow the existing conventions: doc comments on every public item, no `unwrap` 
 11. `workbench context check` prints one line per configured system with its status, checks only the named context, exits `1` when any check fails, never prints a secret, and fails clearly when the server config or the context file is missing or still holds placeholders.
 12. `workbench watch` starts one background watcher (a second call says so and exits `0`), re-indexes edited files within the batch delay, ignores the paths listed above, and `watch stop`, `status`, `logs` and `flush` behave as described; `flush` leaves the index current when it returns, with or without a running watcher; the watcher makes no LLM call and changes no project file.
 13. `workbench context sync` creates or moves one worktree per project at the context's branch and indexes it, leaves each project's own working tree, current branch and refs unchanged, and contacts a remote only with `--fetch`; `context check` reports the result on its `code` line and fails with the exact command when a worktree is missing or behind.
-14. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass.
+14. `workbench storage status` prints the backend, location, answer time, schema versions and per-view counts, changes nothing, and exits `1` naming the backend and location when it cannot be reached.
+15. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass.
 
 ## Roadmap (not in this spec)
 

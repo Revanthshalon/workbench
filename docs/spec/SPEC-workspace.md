@@ -13,6 +13,7 @@ Module `workspace` from the [capability map](capability-map.md). Status: **appro
 7. The config carries `version: 1` so later changes can migrate old files.
 8. *(Amendment)* The config can hold the settings for LLM-assisted semantic annotation, under `semantic.llm`. The supported providers are `copilot-cli`, `ollama` and `claude`. The settings are not secrets: provider, model, optional endpoint and, for `claude`, the *name* of the environment variable that holds the API key. The key itself is never stored in the config, not even inline.
 9. *(Amendment, from `SPEC-core.md`)* The config also holds the storage settings, under `storage`, because `developer-support` and the CLI need storage without the server config. The backend is `sqlite` (the default) or `memgraph`. A Memgraph password is referenced by environment variable name, never stored. The meaning of each setting is defined in `SPEC-storage.md`. Whether it is used is decided by CLI flags (`SPEC-cli.md`), not by the config.
+10. *(Amendment, from `SPEC-storage.md`)* Docker Compose files feed the overview of how projects connect. They normally live inside each project, so a project can name its Compose file; a Compose file that spans projects (for example one at the repository root) is listed at the top level of the config. The workspace also has its own `INIT-MEMORY.md`, where a person writes down how the services fit together; it is read as context and is not parsed into links.
 
 ## Objective
 
@@ -40,6 +41,11 @@ storage:                     # optional; default is SQLite at .workbench/data/wo
   #   port: 7687
   #   username: workbench
   #   password_env: MEMGRAPH_PASSWORD   # the variable's name, never the password
+  #   namespace: default                # optional; separates workspaces on one local Memgraph
+compose:                     # optional; Compose files that span projects, for example one at the repository root
+  - path: docker-compose.yml # relative to the workspace root, or absolute
+    services:                # optional: match a service to a project when its build context cannot be resolved
+      billing: billing-api
 semantic:                    # optional; used only when the CLI is asked to use an LLM
   llm:
     provider: claude           # copilot-cli | ollama | claude
@@ -50,6 +56,8 @@ projects:
     path: services/billing     # relative to the workspace root
     language: python
     dependency_manager: uv     # python: poetry | uv; angular: npm | pnpm | yarn | bun
+    compose: docker-compose.yml  # optional; path inside the project. Default: the first of compose.yaml,
+                                 # compose.yml, docker-compose.yaml, docker-compose.yml at the project root
     environment:               # optional; how to activate the project's environment
       venv: .venv
       activate: uv run
@@ -75,6 +83,9 @@ projects:
 | `dependency_manager` | Required. `poetry` or `uv` for Python; `npm`, `pnpm`, `yarn` or `bun` for Angular (Vite is the build tool, not recorded here). A mismatched pair is an error. |
 | `environment.venv` | Optional, Python only. Relative to the project path. |
 | `environment.activate` | Optional. A command prefix used to launch tools in the project (for example `uv run` or `poetry run`), including the project's language server. |
+| `compose` (project) | Optional. A path relative to the project, or absolute. If absent, the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` at the project root is used, and having none is fine. A listed path that does not exist is an error. |
+| top-level `compose[].path` | Optional list of Compose files that span projects. Relative to the workspace root, or absolute. Must exist. |
+| top-level `compose[].services` | Optional map from a Compose service name to a project id, for services whose build context cannot be matched to a project (for example image-only services). Unknown project ids are rejected. |
 | `lsp.enabled` | Optional, default `true`. `false` turns the language server off for this project. |
 | `lsp.server` | Optional. The server name. Syntax is checked here; the name is checked against the catalog by the `lsp` module. |
 | `lsp.command` | Optional. Overrides the catalog's launch command (program and arguments). It runs through `environment.activate` when that is set. |
@@ -82,7 +93,8 @@ projects:
 | top-level `lsp.<language>` | Optional. The same fields (`enabled`, `server`, `command`, `settings`) as workspace-wide defaults for every project of that language. |
 | `storage.backend` | Optional, default `sqlite`. One of `sqlite`, `memgraph`. |
 | `storage.sqlite.path` | Optional. Relative to the workspace root or absolute. Default `.workbench/data/workbench.db`. |
-| `storage.memgraph.host`, `port`, `username` | Required when the backend is `memgraph`. |
+| `storage.memgraph.host`, `port`, `username` | Required when the backend is `memgraph`. Memgraph runs on the person's own machine; a shared server is not supported. |
+| `storage.memgraph.namespace` | Optional, default `default`. Keeps several of one person's workspaces apart on one local Memgraph. |
 | `storage.memgraph.password_env` | Optional. The name of an environment variable; the value is held as a `secrecy` secret and read only when a connection is opened. |
 | `semantic.llm.provider` | Required when `semantic.llm` is present. One of `copilot-cli`, `ollama`, `claude`. |
 | `semantic.llm.model` | Required for `claude` and `ollama`; optional for `copilot-cli`, which uses its own default. |
@@ -104,6 +116,10 @@ Every module that queries projects takes a scope: all projects (the default) or 
 - The seed is a template with fixed headings (Purpose, Architecture, How to run, Conventions, Gotchas) followed by an "Existing context" section that quotes each source file under its name, each capped at 20 KB.
 - People edit this file. The engine never rewrites it after creation.
 - The same folder also holds `annotations.yml`, the mirror of annotations written by people. It is created and kept up to date by `semantic-layer` (`SPEC-semantic-layer.md`), not by this module.
+
+### Workspace memory
+
+`.workbench/memory/INIT-MEMORY.md` is the workspace's own context file: where a person describes how the projects fit together (which service calls which, shared databases and queues, how a request travels). `workbench init` creates it as an empty template with fixed headings (Overview, How the services connect, Shared infrastructure, Conventions). It is never overwritten, it is served to agents with a project's context, and it is **text only**: nothing is parsed from it into links. A link a person wants as an edge in the overview is added as an annotation of kind `link` (`SPEC-cli.md`).
 
 ## Tech Stack
 
@@ -150,7 +166,7 @@ The engine has no I/O. `services/cli` (the CLI and the MCP server) picks adapter
 | Port | Responsibility |
 |---|---|
 | `WorkspaceStore` | `load()` returns a validated `WorkspaceConfig`; `save(&config)`; `create_empty()` |
-| `MemoryStore` | `create(project_id, seed)` creates the folder and `INIT-MEMORY.md` if absent, never overwrites |
+| `MemoryStore` | `create(project_id, seed)` creates the folder and `INIT-MEMORY.md` if absent, never overwrites; `create_workspace()` does the same for the workspace-level file |
 | `ContextSource` | `read(project_path)` returns the seed files that exist, each capped at 20 KB |
 
 ## Code Style
@@ -198,8 +214,8 @@ Conventions follow the existing code: one error enum in `error.rs`, doc comments
 
 ## Success Criteria
 
-1. `workbench init` writes a `config.yml` that loads back as an empty, valid workspace (`version: 1`, no projects).
-2. A config with two valid projects, including `lsp` blocks, a `storage` block and a `semantic.llm` block, loads, validates and saves unchanged.
+1. `workbench init` writes a `config.yml` that loads back as an empty, valid workspace (`version: 1`, no projects) and an empty workspace-level `.workbench/memory/INIT-MEMORY.md`.
+2. A config with two valid projects, including `lsp` blocks, `compose` entries, a `storage` block and a `semantic.llm` block, loads, validates and saves unchanged.
 3. Each rule in the "Project rules" table is rejected with an error that names the project and field when broken.
 4. Adding a project creates `.workbench/memory/<id>/INIT-MEMORY.md`, seeded from existing context, and a second add never overwrites it.
 5. The effective LSP settings of a project resolve by the precedence rule (project over workspace default over catalog), field by field.
