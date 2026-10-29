@@ -7,7 +7,7 @@ Depends on [`workspace`](SPEC-workspace.md) (approved) and, for the `mcp` comman
 ## Decisions
 
 1. The binary is `workbench` (package `workbench`, in `services/cli`).
-2. This module defines the whole `workbench` command surface for managing a workspace: `init`, `project add | list | remove`, `index`, `watch`, `context check` and `semantic add | revise | retract | list | show | prune | generate`. What indexing and annotations *do* is specified elsewhere (`SPEC-index.md`, `SPEC-graph.md`, `SPEC-semantic-layer.md`); this spec fixes how they are invoked, scoped and reported. The `mcp` command group (`start`, `serve`, `stop`, `restart`, `status`, `logs`, `connect`) is listed here and specified in `SPEC-core.md`; the MCP server has no executable of its own. `workbench lsp run` (`SPEC-lsp.md`) and `workbench platform setup` (`SPEC-platform-setup.md`) have their own specs. Platform setup is its own command; `init` does not take `--platform`.
+2. This module defines the whole `workbench` command surface for managing a workspace: `init`, `project add | list | remove`, `index`, `watch`, `context check | sync` and `semantic add | revise | retract | list | show | prune | generate`. What indexing and annotations *do* is specified elsewhere (`SPEC-index.md`, `SPEC-graph.md`, `SPEC-semantic-layer.md`); this spec fixes how they are invoked, scoped and reported. The `mcp` command group (`start`, `serve`, `stop`, `restart`, `status`, `logs`, `connect`) is listed here and specified in `SPEC-core.md`; the MCP server has no executable of its own. `workbench lsp run` (`SPEC-lsp.md`) and `workbench platform setup` (`SPEC-platform-setup.md`) have their own specs. Platform setup is its own command; `init` does not take `--platform`.
 3. The CLI is a *driving adapter*: it parses arguments, calls engine use cases, and prints results. Rules live in the engine; file access lives in `lib/adapters`.
 4. `.workbench/` is entirely git-ignored; `init` adds it to the workspace root's `.gitignore`.
 5. `init` also generates the server config template at `.workbench/mcp/config.yml` and one context config template per default context at `.workbench/mcp/contexts/<name>.yml` (`production`, `staging`, `testing`). Its schema is defined in `SPEC-core.md`, so that step is built after `core`'s model exists.
@@ -177,14 +177,26 @@ context: staging
   postgres   ok      31 ms   connected as readonly
   redis      failed          connection refused (cache.staging.internal:6379)
   kafka      skipped         not configured
+  code       ok      3 projects on release-2.4 (billing-api 3f9a1c2, users 81be0d4, web 5c0e7aa), indexed
 ```
 
 - Checks only the one context asked for, never the others.
 - Only systems the context configures are checked; the rest are `skipped`.
 - Exit code `0` if every checked system is `ok`, `1` if any failed. Messages never contain a secret.
 - It changes nothing in any system, and it does **not** verify that the credentials are read-only: it only proves the connection works. Read-only is enforced by the tools themselves (`operations` and `data` specs).
+- The `code` line checks, for each project, that the context's branch exists, that a worktree for it is at the branch's current commit, and that its index is current; if not it fails with the fix (`Run 'workbench context sync --context <NAME>'`).
 - What each check does for each system is specified in `SPEC-contexts.md`.
 - `workbench mcp start --mode operational-support` runs this same check for its start context and refuses to start if it fails, so running it beforehand is optional but recommended.
+
+### `workbench context sync [--context <NAME>] [--project <ID>]... [--fetch]`
+
+Prepares the code that operational analysis runs on. In `operational-support` a session sees the branch released to its context, not the project's own checkout, so each context gets a separate worktree of its branch for every project. `sync` creates or moves those worktrees and indexes them. Specified in `SPEC-contexts.md` ("The code of a context").
+
+- `--context` defaults to `default_context`; `--project` (repeatable) limits it to some of the context's projects.
+- Uses the local copy of the branch; only with `--fetch` does it first run `git fetch origin <branch>`.
+- Prints per project: branch, short commit, files changed since the last sync, files indexed. Fails naming the project and branch when one cannot be found, or when a project is not a git repository.
+- It never changes a project's own working tree, current branch, index or branch refs. The only trace in a project's repository is git's worktree metadata under `.git/worktrees/`. Worktrees live in `.workbench/worktrees/<context>/<project-id>/`, which is git-ignored.
+- `workbench mcp start --mode operational-support` and a context switch never run it for you: they fail with the command to run.
 
 ### `workbench mcp <command>`
 
@@ -296,7 +308,8 @@ Follow the existing conventions: doc comments on every public item, no `unwrap` 
 10. `workbench semantic generate` and `index --annotate` call the LLM only when both the flag and `semantic.llm` are present, record their output as agent-written, and never touch a person-written annotation; `--dry-run` makes no call.
 11. `workbench context check` prints one line per configured system with its status, checks only the named context, exits `1` when any check fails, never prints a secret, and fails clearly when the server config or the context file is missing or still holds placeholders.
 12. `workbench watch` starts one background watcher (a second call says so and exits `0`), re-indexes edited files within the batch delay, ignores the paths listed above, and `watch stop`, `status`, `logs` and `flush` behave as described; `flush` leaves the index current when it returns, with or without a running watcher; the watcher makes no LLM call and changes no project file.
-13. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass.
+13. `workbench context sync` creates or moves one worktree per project at the context's branch and indexes it, leaves each project's own working tree, current branch and refs unchanged, and contacts a remote only with `--fetch`; `context check` reports the result on its `code` line and fails with the exact command when a worktree is missing or behind.
+14. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass.
 
 ## Roadmap (not in this spec)
 

@@ -1,6 +1,6 @@
 # workbench
 
-Command-line tool for Workbench, and the way to run and manage the MCP server (`workbench mcp …`, see below). Binary: `workbench`. Before starting `operational-support`, `workbench context check` verifies the connections of the context you will use.
+Command-line tool for Workbench, and the way to run and manage the MCP server (`workbench mcp …`, see below). Binary: `workbench`. Before starting `operational-support`, `workbench context sync` prepares the release branch of the context you will use, and `workbench context check` verifies its connections and that branch.
 
 ## Usage
 
