@@ -117,15 +117,16 @@ Builds the AST data for the projects in the workspace and keeps it up to date. I
 | Option | Meaning |
 |---|---|
 | `--project <ID>` | Limit to this project. Repeatable. Default: every project. An unknown id fails and lists the known ones. |
-| `--changed` | Only consider files that git reports as changed. Faster on large repos; falls back to content hashes where a project is not a git repo. |
+| `--changed` | Only consider files git reports as changed since the commit last indexed, plus uncommitted, untracked and previously failed files. Faster on large repos; behaves like the default run where a project is not a git repo or has not been indexed. |
+| `--wait <SECONDS>` | How long to wait for another indexing run to finish (default 60) before failing. |
 | `--full` | Re-parse every file in scope, ignoring what is already indexed. |
 | `--annotate` | After indexing, ask the configured LLM to draft annotations for the nodes that are new or changed and have none. Same behaviour as `semantic generate` on those nodes. Off by default. |
 
-- Prints progress to stderr and a summary to stdout, per project: files parsed, unchanged, removed, nodes re-linked, parse failures, and the number of annotations that became stale.
+- Prints progress to stderr and a summary to stdout, per project: files parsed, unchanged, removed, skipped, partial and failed, nodes re-linked, and the number of annotations that became stale or orphaned.
 - Fails with a hint when the workspace has no projects.
 - It reads project files and writes only to the storage backend (configured in the workspace config's `storage` block); it never changes a project's files.
 - The MCP `reindex` tool runs the same use case, so both produce the same result.
-- Exit codes follow "Common behaviour"; how partial failures (some files fail to parse) are counted is defined in `SPEC-index.md`.
+- Exit codes follow "Common behaviour"; the exit code is `1` if any file failed to be read or parsed, a project could not be written, the lock could not be taken or the run was interrupted; skipped and partial files are not failures (`SPEC-index.md`).
 
 ### `workbench watch [start] | stop | status | logs | flush`
 
