@@ -140,7 +140,7 @@ Conventions every module follows:
 - Tools that query projects take an optional `projects` list (project ids); omitted means all projects (`SPEC-workspace.md`).
 - Success returns structured JSON plus a short text summary. Failure is returned as a tool error with an actionable message, not a protocol error.
 - No tool output contains a secret. Secrets are `Secret<T>` values and have no `Display` and no `Serialize`.
-- Prompts are registered the same way, from `agent-prompts` only.
+- Prompts are registered the same way: the developer prompts by `dev-support` (`SPEC-dev-support.md`), the operational prompts by `agent-prompts` (`SPEC-agent-prompts.md`), and `enrich_knowledge` once by `semantic-layer`, which both modes load.
 
 ### Server config: the envelope
 
