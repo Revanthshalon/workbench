@@ -1,9 +1,9 @@
 <!--
-ops-support incident report template, used by the `write_rca` prompt in operational-support mode.
+Workbench incident report template, used by the `write_rca` prompt in operational-support mode.
 
 Rules for whoever fills this in (agent or human):
 - Every claim cites evidence: a tool call (name + key args) or a source location (`file:line`).
-  Evidence gathered with ops-mcp is in the audit log `.ops/logs/audit.*.jsonl` for this session.
+  Evidence gathered with Workbench is in this session's log, `<logs.dir>/sessions/<session-id>.log`.
 - Where evidence is missing, say so under "Open questions". Never guess a root cause.
 - Times are UTC, ISO 8601.
 - Never paste secrets. Tool output is already redacted; keep it that way.
@@ -18,13 +18,13 @@ Rules for whoever fills this in (agent or human):
 | Incident ID | {{INC-YYYYMMDD-NN}} |
 | Status | {{investigating \| mitigated \| resolved \| monitoring \| closed}} |
 | Severity | {{SEV1 \| SEV2 \| SEV3 \| SEV4}}: {{one-line justification}} |
-| Environment | {{local \| staging \| production}} · {{k8s context / namespace, or compose project}} |
+| Environment | {{testing \| staging \| production}} · {{k8s context / namespace, or compose project}} |
 | Services affected | {{service names from `service_map`}} |
 | Detected | {{timestamp}} via {{alert \| user report \| log analysis}} |
 | Started (first evidence) | {{timestamp}}. Source: {{first matching log line / event}} |
 | Mitigated | {{timestamp or "not yet"}} |
 | Resolved | {{timestamp or "not yet"}} |
-| Report author | {{name}} · ops-mcp session `{{session_id}}` |
+| Report author | {{name}} · Workbench session `{{session_id}}` |
 
 ## 1. Summary
 
@@ -46,7 +46,7 @@ Rules for whoever fills this in (agent or human):
 | Time | Event | Source |
 |---|---|---|
 | {{t}} | {{trigger, e.g. deploy, config change, traffic spike}} | {{commit / deploy id / k8s event: `recent_changes(...)`, `k8s_status` rollouts}} |
-| {{t}} | {{first error observed}} | `analyze_logs(services=[…], since=…)` |
+| {{t}} | {{first error observed}} | `analyze_logs(service="…", since=…)` |
 | {{t}} | {{detection}} | {{alert / report}} |
 | {{t}} | {{mitigation applied}} | {{who / what}} |
 | {{t}} | {{resolution verified}} | {{check from §8}} |
@@ -66,10 +66,10 @@ Rules for whoever fills this in (agent or human):
 
 | Signal | Exact form | Matches in code | How to check |
 |---|---|---|---|
-| Log signature | `{{log template, e.g. "payment failed for order %s"}}` | `{{file:line}}` in `{{function}}` | `match_log(line="…")` |
-| Traceback / exception | `{{ExceptionType: message}}` | `{{innermost app frame file:line}}` | `match_log(line="<traceback>")` |
+| Log signature | `{{log template, e.g. "payment failed for order %s"}}` | `{{file:line}}` in `{{function}}` | `match_log(service="…", pattern="…")` |
+| Traceback / exception | `{{ExceptionType: message}}` | `{{innermost app frame file:line}}` | `match_log(service="…", pattern="<exception line>")` |
 | Runtime state | {{e.g. CrashLoopBackOff, OOMKilled, unhealthy, restarts > N}} | n/a | `k8s_status(service=…)` / `compose_status()` |
-| Datastore state | {{e.g. blocked locks, connections at max, evicted keys}} | n/a | `datastore_health(datastore=…)` |
+| Datastore state | {{e.g. blocked locks, connections at max, evicted keys}} | n/a | `datastore_health(system=…, connection=…)` |
 | Config state | {{e.g. PAYMENT_GATEWAY_URL unset}} | `{{file:line}}` | `check_config(service=…)` |
 
 **Look-alikes ruled out:**
@@ -118,10 +118,10 @@ Rules for whoever fills this in (agent or human):
 
 | Step | Action | Issue present if | Issue absent if |
 |---|---|---|---|
-| V1 | `analyze_logs(services=["{{svc}}"], since="15m", min_level="error")` | cluster `{{signature}}` count > 0 | no such cluster |
-| V2 | `match_log(line="{{sample line}}")` | resolves to `{{function}}` at `{{file:line}}` | resolves elsewhere / none |
+| V1 | `analyze_logs(service="{{svc}}", since="15m")` | cluster `{{signature}}` count > 0 | no such cluster |
+| V2 | `match_log(service="{{svc}}", pattern="{{sample line}}")` | resolves to `{{function}}` at `{{file:line}}` | resolves elsewhere / none |
 | V3 | `check_config(service="{{svc}}")` | finding `{{kind}}: {{detail}}` | no such finding |
-| V4 | `db_query(datastore="{{ds}}", sql="{{read-only query}}")` | {{condition on the result}} | {{condition}} |
+| V4 | `db_query(connection="{{conn}}", sql="{{read-only query}}")` | {{condition on the result}} | {{condition}} |
 | V5 | {{manual / user-facing check, e.g. "pay a test order in staging"}} | {{fails how}} | {{succeeds}} |
 
 **Escalate when:** {{conditions under which on-call stops self-serving and pages an owner}}
@@ -130,7 +130,7 @@ Rules for whoever fills this in (agent or human):
 
 ### 7.1 Immediate mitigation
 
-<!-- What stops the bleeding now. Each step: who runs it, the risk, and how to roll it back. ops-mcp is read-only, so changes are made by people with the usual access. -->
+<!-- What stops the bleeding now. Each step: who runs it, the risk, and how to roll it back. Workbench is read-only, so changes are made by people with the usual access. -->
 
 | # | Step | Owner | Risk | Rollback |
 |---|---|---|---|---|
@@ -156,7 +156,7 @@ Rules for whoever fills this in (agent or human):
 |---|---|---|---|
 | R1 | Re-run V1–V5 | all "issue absent" | {{pass/fail, time}} |
 | R2 | {{functional check of the affected flow}} | {{expected}} | {{…}} |
-| R3 | {{boundary check, e.g. `contract(name="…")` shows no undeclared_calls}} | {{expected}} | {{…}} |
+| R3 | {{boundary check, e.g. `contract(project="…")` shows no unmatched calls}} | {{expected}} | {{…}} |
 | R4 | Error rate / log volume back to baseline | `analyze_logs(since="1h")` shows no `{{signature}}` | {{…}} |
 
 - **Monitoring window:** {{e.g. 24h. What to watch, and who watches}}
@@ -190,7 +190,7 @@ Rules for whoever fills this in (agent or human):
 
 ### A. Tool calls
 
-<!-- From `.ops/logs/audit.*.jsonl` for session {{session_id}}: tool, key args, outcome. No result content. -->
+<!-- Filled in by Workbench when the report is saved, from the session log: tool, key args, outcome. No result content. Anything written here is replaced. -->
 | Time | Tool | Key args | Outcome |
 |---|---|---|---|
 | {{t}} | {{tool}} | {{args}} | {{ok/error}} |

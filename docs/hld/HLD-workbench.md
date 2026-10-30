@@ -68,7 +68,8 @@ Actors: the **developer** (runs the CLI, writes memory and annotations), the **a
 ├── run/                     mcp-<mode>.sock/.pid, watch.sock/.pid, index.lock (dir 0700, sockets 0600)
 ├── logs/                    server, watcher and session logs (dir 0700, files 0600)
 ├── worktrees/<context>/<project-id>/   branch checkouts for operational analysis
-└── flows/                   one file per confirmed execution flow
+├── flows/                   one file per confirmed execution flow, plus ORCHESTRATION.md
+└── incidents/               the latest revision of each incident report
 ```
 
 Memgraph holds, per namespace and view: `Project` nodes (carrying framework and binaries), code nodes, derived cross-project overview (from Compose, Dockerfiles, shared APIs), annotations, schema versions. Nodes carry `namespace`, `view`, `project`.
