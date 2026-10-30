@@ -40,13 +40,13 @@ Hexagonal (ports and adapters):
 
 ## Storage
 
-Workbench keeps the code graph and its semantic annotations in **Memgraph** (the default) or **SQLite**. Memgraph runs on your own machine; Workbench does not install or start it. For example:
+Workbench keeps the code graph and its semantic annotations in **Memgraph**, running on your own machine. Workbench does not install, start or stop it, and the default mode (`developer-support`) will not start until Memgraph answers. For example:
 
 ```sh
 docker run -p 7687:7687 memgraph/memgraph
 ```
 
-To use SQLite instead, which needs no server, set `storage.backend: sqlite` in `.workbench/config.yml`. `workbench storage status` shows which backend is in use and whether it answers.
+The host, port and `namespace` (which keeps workspaces apart on one Memgraph) are in the `storage` block of `.workbench/config.yml`. `workbench storage status` shows where Memgraph is and whether it answers. Agents query the graph with one tool, `graph_query`, which takes Cypher.
 
 ## Development
 

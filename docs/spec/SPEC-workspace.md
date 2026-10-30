@@ -12,7 +12,7 @@ Module `workspace` from the [capability map](capability-map.md). Status: **appro
 6. The file adapters (YAML config, memory folders, the existing `.workbench/` directory store) live in a new shared crate, `lib/adapters`, because both the CLI and the MCP server (`workbench mcp`) read the config.
 7. The config carries `version: 1` so later changes can migrate old files.
 8. *(Amendment)* The config can hold the settings for LLM-assisted semantic annotation, under `semantic.llm`. The supported providers are `copilot-cli`, `ollama` and `claude`. The settings are not secrets: provider, model, optional endpoint and, for `claude`, the *name* of the environment variable that holds the API key. The key itself is never stored in the config, not even inline.
-9. *(Amendment, from `SPEC-core.md`)* The config also holds the storage settings, under `storage`, because `developer-support` and the CLI need storage without the server config. The backend is `memgraph` (the default) or `sqlite`. A Memgraph password is referenced by environment variable name, never stored. The meaning of each setting is defined in `SPEC-storage.md`. Whether it is used is decided by CLI flags (`SPEC-cli.md`), not by the config.
+9. *(Amendment, from `SPEC-core.md`)* The config also holds the storage settings, under `storage`, because `developer-support` and the CLI need storage without the server config. Workbench has one storage, Memgraph, running on the person's own machine. Its password is referenced by environment variable name, never stored. The meaning of each setting is defined in `SPEC-storage.md`. Whether it is used is decided by CLI flags (`SPEC-cli.md`), not by the config.
 10. *(Amendment, from `SPEC-storage.md`)* Docker Compose files feed the overview of how projects connect. They normally live inside each project, so a project can name its Compose file; a Compose file that spans projects (for example one at the repository root) is listed at the top level of the config. The workspace also has its own `INIT-MEMORY.md`, where a person writes down how the services fit together; it is read as context and is not parsed into links.
 
 ## Objective
@@ -34,16 +34,12 @@ version: 1
 lsp:                         # optional workspace-wide defaults, per language
   python:
     server: basedpyright
-storage:                     # optional; default is Memgraph on localhost:7687
-  backend: memgraph          # memgraph | sqlite
-  memgraph:
-    host: localhost          # default localhost
-    port: 7687               # default 7687
-    # username: workbench    # optional; Memgraph has no login unless one is set up
-    # password_env: MEMGRAPH_PASSWORD   # the variable's name, never the password
-    # namespace: default     # optional; separates workspaces on one local Memgraph
-  # sqlite:
-  #   path: .workbench/data/workbench.db   # used only when backend is sqlite
+storage:                     # optional; Workbench's one storage is Memgraph, on your own machine
+  host: localhost            # default localhost
+  port: 7687                 # default 7687
+  namespace: billing-3f9a    # keeps this workspace apart on one Memgraph; written by `workbench init`
+  # username: workbench      # optional; Memgraph has no login unless one is set up
+  # password_env: MEMGRAPH_PASSWORD   # the variable's name, never the password
 compose:                     # optional; Compose files that span projects, for example one at the repository root
   - path: docker-compose.yml # relative to the workspace root, or absolute
     services:                # optional: match a service to a project when its build context cannot be resolved
@@ -93,13 +89,11 @@ projects:
 | `lsp.command` | Optional. Overrides the catalog's launch command (program and arguments). It runs through `environment.activate` when that is set. |
 | `lsp.settings` | Optional. A free-form map passed to the server unchanged; the workspace does not interpret it. |
 | top-level `lsp.<language>` | Optional. The same fields (`enabled`, `server`, `command`, `settings`) as workspace-wide defaults for every project of that language. |
-| `storage.backend` | Optional, default `memgraph`. One of `memgraph`, `sqlite`. |
-| `storage.memgraph.host` | Optional, default `localhost`. Memgraph runs on the person's own machine; a shared server is not supported. |
-| `storage.memgraph.port` | Optional, default `7687`. |
-| `storage.memgraph.username` | Optional. Memgraph has no login unless one is set up. |
-| `storage.memgraph.namespace` | Optional, default `default`. Keeps several of one person's workspaces apart on one local Memgraph. |
-| `storage.memgraph.password_env` | Optional. The name of an environment variable; the value is held as a `secrecy` secret and read only when a connection is opened. |
-| `storage.sqlite.path` | Optional, used only when the backend is `sqlite`. Relative to the workspace root or absolute. Default `.workbench/data/workbench.db`. |
+| `storage.host` | Optional, default `localhost`. Memgraph runs on the person's own machine; a shared server is not supported. |
+| `storage.port` | Optional, default `7687`. |
+| `storage.username` | Optional. Memgraph has no login unless one is set up. |
+| `storage.password_env` | Optional. The name of an environment variable; the value is held as a `secrecy` secret and read only when a connection is opened. |
+| `storage.namespace` | Optional. Keeps this workspace's data apart from other workspaces on the same local Memgraph. `workbench init` writes a unique one (the folder name plus four random hexadecimal characters); when absent it is `default`, which is only safe for a single workspace. |
 | `semantic.llm.provider` | Required when `semantic.llm` is present. One of `copilot-cli`, `ollama`, `claude`. |
 | `semantic.llm.model` | Required for `claude` and `ollama`; optional for `copilot-cli`, which uses its own default. |
 | `semantic.llm.endpoint` | Optional, `ollama` and `claude` only. For `ollama` the default is `http://localhost:11434`. |
@@ -218,7 +212,7 @@ Conventions follow the existing code: one error enum in `error.rs`, doc comments
 
 ## Success Criteria
 
-1. `workbench init` writes a `config.yml` that loads back as an empty, valid workspace (`version: 1`, the default `storage` block, no projects) and an empty workspace-level `.workbench/memory/INIT-MEMORY.md`.
+1. `workbench init` writes a `config.yml` that loads back as an empty, valid workspace (`version: 1`, a `storage` block, no projects) and an empty workspace-level `.workbench/memory/INIT-MEMORY.md`.
 2. A config with two valid projects, including `lsp` blocks, `compose` entries, a `storage` block and a `semantic.llm` block, loads, validates and saves unchanged.
 3. Each rule in the "Project rules" table is rejected with an error that names the project and field when broken.
 4. Adding a project creates `.workbench/memory/<id>/INIT-MEMORY.md`, seeded from existing context, and a second add never overwrites it.

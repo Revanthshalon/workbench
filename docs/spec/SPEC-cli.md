@@ -49,7 +49,7 @@ Creates, under `<DIR>` (default `.`):
 
 | Created | Content |
 |---|---|
-| `.workbench/config.yml` | `version: 1`, a `storage` block (`backend: memgraph`) and `projects: []` (the format in `SPEC-workspace.md`) |
+| `.workbench/config.yml` | `version: 1`, a `storage` block (host, port and a unique `namespace`) and `projects: []` (the format in `SPEC-workspace.md`) |
 | `.workbench/memory/INIT-MEMORY.md` | An empty workspace-level context template for how the projects connect (`SPEC-workspace.md`) |
 | `.workbench/mcp/config.yml` | The server config template (`SPEC-core.md`); added once `core` defines it |
 | `.workbench/mcp/contexts/<name>.yml` | One context config template per default context (`production`, `staging`, `testing`); content owned by `SPEC-contexts.md` |
@@ -144,11 +144,11 @@ Keeps the index fresh while code changes, including edits made by AI tools. The 
 
 ### `workbench storage status`
 
-A read-only check of the storage backend (`SPEC-storage.md`). It prints the backend (Memgraph or SQLite), where it is (a path or `host:port`), whether it answers and how fast, each module's schema version, and per view (the project working trees and each context) the counts of indexed files, nodes, edges and annotations, plus the file size for SQLite.
+A read-only check of the storage (`SPEC-storage.md`). It prints where Memgraph is (`host:port` and the namespace), whether it answers and how fast, each module's schema version, and per view (the project working trees and each context) the counts of indexed files, nodes, edges and annotations.
 
 - It needs only the workspace config, so it works with `developer-support`.
 - It changes nothing and applies no migrations; if the database is newer than this `workbench` it says so.
-- When the backend cannot be reached it exits `1` and names the backend and its location, with the hint to start Memgraph (for example `docker run -p 7687:7687 memgraph/memgraph`) or set `storage.backend: sqlite`, and with no secret in the message.
+- When Memgraph cannot be reached it exits `1` and names its host and port, with the hint to start Memgraph (for example `docker run -p 7687:7687 memgraph/memgraph`), and with no secret in the message.
 
 ### `workbench semantic <command>`
 
@@ -320,7 +320,7 @@ Follow the existing conventions: doc comments on every public item, no `unwrap` 
 11. `workbench context check` prints one line per configured system with its status, checks only the named context, exits `1` when any check fails, never prints a secret, and fails clearly when the server config or the context file is missing or still holds placeholders.
 12. `workbench watch` starts one background watcher (a second call says so and exits `0`), re-indexes edited files within the batch delay, ignores the paths listed above, and `watch stop`, `status`, `logs` and `flush` behave as described; `flush` leaves the index current when it returns, with or without a running watcher; the watcher makes no LLM call and changes no project file.
 13. `workbench context sync` creates or moves one worktree per project at the context's branch and indexes it, leaves each project's own working tree, current branch and refs unchanged, and contacts a remote only with `--fetch`; `context check` reports the result on its `code` line and fails with the exact command when a worktree is missing or behind.
-14. `workbench storage status` prints the backend, location, answer time, schema versions and per-view counts, changes nothing, and exits `1` naming the backend and location when it cannot be reached.
+14. `workbench storage status` prints host, port, namespace, answer time, schema versions and per-view counts, changes nothing, and exits `1` naming the host and port when Memgraph cannot be reached.
 15. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass.
 
 ## Roadmap (not in this spec)

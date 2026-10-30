@@ -20,7 +20,7 @@ Depends on [`workspace`](SPEC-workspace.md) (approved). Used by [`cli`](SPEC-cli
 1. The modes `operational-onboarding` and `developer-onboarding` are accepted by `--mode` and listed in `--help` as "planned"; choosing one exits with `mode '<name>' is planned and not available yet`. Only `developer-support` and `operational-support` start.
 2. A **session** is one connected client, identified by a token the shim generates when it starts. The token survives a server restart, so a session (and its audit trail) is not split by `restart`. `SPEC-audit.md` defines retention.
 3. The workspace is found as the CLI does it: search upward from the current directory for `.workbench/`, with `--workspace <DIR>` as an override.
-4. *(Confirmed)* Storage settings (Memgraph or SQLite) live in the **workspace config**, not the server config, because `developer-support` and the CLI need storage without the server config.
+4. *(Confirmed)* Storage settings (Memgraph's host, port and namespace) live in the **workspace config**, not the server config, because `developer-support` and the CLI need storage without the server config.
 5. There is no hot reload. Changing a config means `workbench mcp restart`.
 6. *(Confirmed)* The MCP SDK is the official Rust SDK (`rmcp`); its version is pinned when the dependency is added. It is used with a custom transport over the socket (to be confirmed when the dependency is added).
 7. Unix-like systems (macOS, Linux) first. A Windows transport (named pipes) is not in this spec.
