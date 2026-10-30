@@ -67,6 +67,11 @@ kubectl:                            # runs ON the VM, through ssh
   context: staging-cluster          # the kubectl context name
   namespace: billing                # required
 
+compose:                            # optional: Docker Compose on the VM, read by `compose_status` (SPEC-operations)
+  binary: docker                    # default docker
+  project_dir: /srv/billing         # absolute path on the VM
+  files: [compose.yaml]             # relative to project_dir; default compose.yaml
+
 postgres:                           # named connections; host and port as the VM sees them
   billing:
     host: db.staging.internal
@@ -108,11 +113,12 @@ kafka:                              # reached through the VM
 | `ssh.connect_timeout` | Optional, seconds, default `10`: the time limit for the SSH login probe. |
 | `timeout` | Optional on `kubectl` and on each `postgres`, `redis` and `kafka` connection, seconds, default `10`: the time limit for that probe. |
 | `access` | Optional on each `postgres` and `redis` connection and on `kafka`; `tunnel` (default) or `remote`. With `remote`, a password or other secret field on that connection is rejected ("passwords are not sent to the VM; remove it or use `access: tunnel`"), and `binary` (`psql`, `redis-cli`) or `bin_dir` (Kafka tools) name the program on the VM. With `tunnel`, `binary` and `bin_dir` are rejected. |
-| Sections | Every other section (`kubectl`, `postgres`, `redis`, `kafka`) is optional. A system that is not configured is `skipped` and its tools say it is not configured for this context. |
+| Sections | Every other section (`kubectl`, `compose`, `postgres`, `redis`, `kafka`) is optional. A system that is not configured is `skipped` and its tools say it is not configured for this context. |
 | Unknown keys | Rejected with the file, the path and the key, so a typo cannot silently disable a setting. |
 | Placeholders | A value that is still `<fill in>` fails validation and is reported with the others. |
 | Secrets | `password` and the like follow SPEC-core's secret references. A secret field may have an inline value, a `_env` name, or both. |
 | `branch` | Required. The branch cherry-picked for the release that runs in this environment. `branches` maps a project id to a different branch for that project (projects in separate repos rarely share branch names). Unknown project ids are rejected. |
+| `compose` | Optional. `project_dir` is required when the section is present: an absolute path on the VM. `binary` defaults to `docker`; `files` defaults to `[compose.yaml]`, each relative to `project_dir` with no `..`. Used read-only by `operations` (`ps`, `logs`, `config`). |
 | `kubectl.namespace` | Required when `kubectl` is present. `kubectl.kubeconfig` is a path on the VM. The cluster's credentials live on the VM, not in this file. |
 | Names | The names under `postgres` and `redis` are kebab-case and unique within the context. A context itself is one of `production`, `staging`, `testing`. |
 
@@ -136,7 +142,7 @@ All runtime access to an environment goes through its VM.
 - **The connection.** One SSH connection per context, opened the first time something in that context needs it, shared by the sessions in that context, closed after 10 idle minutes and re-opened once if it drops. If it cannot be opened the tool fails with an error naming the context and the host.
 - **Host keys.** The host key must already be in `known_hosts` or match the pin in the context file. An unknown key, a changed key or a pin mismatch is refused with the fingerprint shown, so a person can verify and add it. Keys are never accepted automatically.
 - **No shell, no agent.** No interactive shell, no TTY, no agent forwarding, no `sudo`. The credential is the SSH password from the context file (a `secrecy` value, exposed only to authenticate).
-- **The remote runner.** The only way to run something on the VM. It accepts a typed command template from `operations` (a fixed program and arguments, with each parameter validated, for example a namespace or a pod name against a strict pattern) and nothing else. The catalog of templates (`kubectl get`, `describe`, `logs`, `docker compose ps`, reading a configuration file, and so on) is owned by `operations`; the runner refuses a command that is not in it. Each run has a time limit (30 seconds by default) and an output limit (5 MB by default), and returns the exit code and the output.
+- **The remote runner.** The only way to run something on the VM. It accepts a typed command template from `operations` (a fixed program and arguments, with each parameter validated, for example a namespace or a pod name against a strict pattern) and nothing else. The catalog of templates (`kubectl get` and `logs`, `docker compose ps`, `logs` and `config`) is owned by `operations`; the runner refuses a command that is not in it. Each run has a time limit (30 seconds by default) and an output limit (5 MB by default), and returns the exit code and the output.
 - **Two ways to reach a datastore** (`access`, per connection). **Tunnel:** the runner opens a port forward bound to `127.0.0.1` only, to the host and port in the context file as the VM sees them, and the native driver connects to the local end; tunnels close with the connection. **Remote:** the VM's own `psql`, `redis-cli` or Kafka tools run through the runner as typed templates and their output is parsed; no datastore password ever leaves this machine, because the tools use the SSH user's own login on the VM.
 - **Audit.** Each remote command (program, arguments, exit code, output size) and each tunnel opening is a line in the session log, which is the audit record. Output itself is subject to the rules in `SPEC-audit.md`. Credentials never appear.
 
@@ -164,10 +170,11 @@ All runtime access to an environment goes through its VM.
 | `postgres` (each named connection) | Tunnel: connect with the configured `sslmode`, run `SELECT 1`. Remote: on the VM, `psql -w -h … -U … -d … -tAc 'SELECT 1'` | `connected as <user> (tunnel)` or `(on the VM)` |
 | `redis` (each named connection) | Tunnel: connect (TLS if set), authenticate, `PING`. Remote: on the VM, `redis-cli -h … -p … PING` | `PONG (tunnel)` or `(on the VM)` |
 | `kafka` | Tunnel: fetch cluster metadata. Remote: on the VM, the Kafka tools' broker API check | `<n> brokers (tunnel)` or `(on the VM)` |
+| `compose` | On the VM: `docker compose --project-directory DIR ps --format json` (with the configured files) | `<n> services` |
 | `code` (all the context's projects) | For each project: the branch exists, a worktree for it exists at the branch's current commit, and its index is current | `3 projects on release-2.4 (billing-api 3f9a1c2, users 81be0d4, web 5c0e7aa), indexed` |
 
 - Results are `ok`, `failed` or `skipped` (not configured), with the latency and a short message. Exit code `0` if nothing failed, `1` otherwise.
-- If the `ssh` probe fails, the probes that depend on it (`kubectl`, `postgres`, `redis`, `kafka`) are not attempted and are shown as `skipped` with the message `ssh failed`; the `code` line does not need the VM and still runs.
+- If the `ssh` probe fails, the probes that depend on it (`kubectl`, `compose`, `postgres`, `redis`, `kafka`) are not attempted and are shown as `skipped` with the message `ssh failed`; the `code` line does not need the VM and still runs.
 - Probes are read-only by construction (`true`, `SELECT 1`, `PING`, a metadata request, `get pods`). They never create, write or change anything.
 - The `code` line **fails** with the exact fix when a project is not a git repository, the branch does not exist, the worktree is missing, the branch has moved on since the last sync, or the index is behind, for example `billing-api: no worktree for 'release-2.4'. Run 'workbench context sync --context staging'`.
 - **No secret in any output.** Messages are built from our own fields. Any text coming from a driver, from the SSH library or from a command run on the VM has every resolved secret value removed by exact match before it is shown or logged, as a safety net on top of never exposing secrets.
