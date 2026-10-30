@@ -139,7 +139,7 @@ lib/adapters/src/graph/
 services/cli/src/mcp/modules/graph.rs   # the tools
 ```
 
-**`GraphStore` operations** (added to the port in `SPEC-storage.md`): `write_partition(view, project, data)`, `read_partition_index(view, project)` (file hashes and parser versions only), `delete_partition`, `replace_overview(view, data)`, `read_overview(view)`, `node(id)`, `neighbours(id, relation, direction, depth, limit)`, `find(name, kind, projects, limit)`, `nodes_in_lines(file, from, to)`, `node_at(view, project, path, symbol)` (look up a node by its address, which is its id without the view), `query` (storage spec), `schema_version`. Each is covered by the shared suite.
+**`GraphStore` operations** (added to the port in `SPEC-storage.md`): `apply_changes(view, project, changes)` (upserts, removals and `indexed_commit` in one atomic write; `SPEC-index.md`), `write_partition(view, project, data)` (a full rebuild), `read_partition_index(view, project)` (per file: hash, parser version, surface and any index error, plus the partition's `indexed_commit`), `delete_partition`, `replace_overview(view, data)`, `read_overview(view)`, `node(id)`, `neighbours(id, relation, direction, depth, limit)`, `find(name, kind, projects, limit)`, `nodes_in_lines(file, from, to)`, `node_at(view, project, path, symbol)` (look up a node by its address, which is its id without the view), `query` (storage spec), `schema_version`. Each is covered by the shared suite.
 
 ## Code Style
 
