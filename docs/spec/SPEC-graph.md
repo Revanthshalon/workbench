@@ -44,11 +44,11 @@ The module is done when:
 | Label | Extra properties |
 |---|---|
 | `Project` | `language`, `dependency_manager` |
-| `File` | `file_kind` (see `SPEC-lsp.md`), `hash`, `size`, `skipped`, `partial`, `parser_version` |
-| `Class`, `Function`, `Method`, `Constant` | `qualified_name`, `signature`, `decorators`, `docstring` (first 300 characters), `is_test` |
+| `File` | `file_kind` (see `SPEC-lsp.md`), `hash`, `size`, `skipped`, `partial`, `parser_version`, `fingerprint` |
+| `Class`, `Function`, `Method`, `Constant` | `qualified_name`, `signature`, `decorators`, `docstring` (first 300 characters), `is_test`, `fingerprint` |
 | `Import` | `module`, `names` |
 | `Route` | `http_method`, `path_pattern`, `framework` |
-| `Component`, `Service`, `Directive` | `selector`, `template`, `style_urls` (Angular) |
+| `Component`, `Service`, `Directive` | `selector`, `template`, `style_urls` (Angular), `fingerprint` |
 | `Element`, `StyleRule` | `tag` or `selector`, `bindings` |
 | `Stage`, `Instruction` | Dockerfile: `base_image`, `command` |
 | `ComposeService`, `Network`, `Volume` | `image`, `build_context`, `ports`, `depends_on`, `environment_keys` (names only, never values) |
@@ -60,6 +60,8 @@ The module is done when:
 **Overview** relationships live in a separate partition per view and carry `evidence` (a list of `{file, line, kind}`): `LINKS_TO` (project → project, with `kinds`) and the `CALLS_HTTP`, `DEPENDS_ON`, `USES_IMAGE` edges between nodes of different projects.
 
 Environment values, secrets in YAML or Compose, and file contents beyond a short docstring are never stored in the graph. `environment_keys` holds names only.
+
+`fingerprint` is a 16-character hash the semantic layer compares to tell whether an annotated node changed. Its rules (a function's trimmed source, a class's header and member signatures, a file's top-level names and signatures) are in `SPEC-semantic-layer.md`, and the parsers compute it.
 
 The schema is versioned (`schema_version: 1`). Adding a label or property is a compatible change; removing or renaming one bumps the version and needs a migration (`SPEC-storage.md`).
 
@@ -137,7 +139,7 @@ lib/adapters/src/graph/
 services/cli/src/mcp/modules/graph.rs   # the tools
 ```
 
-**`GraphStore` operations** (added to the port in `SPEC-storage.md`): `write_partition(view, project, data)`, `read_partition_index(view, project)` (file hashes and parser versions only), `delete_partition`, `replace_overview(view, data)`, `read_overview(view)`, `node(id)`, `neighbours(id, relation, direction, depth, limit)`, `find(name, kind, projects, limit)`, `nodes_in_lines(file, from, to)`, `query` (storage spec), `schema_version`. Each is covered by the shared suite.
+**`GraphStore` operations** (added to the port in `SPEC-storage.md`): `write_partition(view, project, data)`, `read_partition_index(view, project)` (file hashes and parser versions only), `delete_partition`, `replace_overview(view, data)`, `read_overview(view)`, `node(id)`, `neighbours(id, relation, direction, depth, limit)`, `find(name, kind, projects, limit)`, `nodes_in_lines(file, from, to)`, `node_at(view, project, path, symbol)` (look up a node by its address, which is its id without the view), `query` (storage spec), `schema_version`. Each is covered by the shared suite.
 
 ## Code Style
 
