@@ -19,7 +19,7 @@ Depends on [`workspace`](SPEC-workspace.md) (approved) and, for the `mcp` comman
 3. `project add` detects language and dependency manager from files in the project, and asks for flags when it cannot decide.
 4. `project remove` removes the project from the config and keeps its memory folder, because the folder may contain notes written by a person.
 5. Output is plain text for people. There is no `--json` yet.
-6. Commands that act on a node select it with separate flags: `--project <ID>` (the whole project), plus `--file <PATH>` (a file, relative to the project root; needs `--project`), plus `--symbol <NAME>` (a class or function by qualified name, such as `StripeGateway.charge`; needs `--file`). The target of a `link` uses `--to-project`, `--to-file` and `--to-symbol` the same way.
+6. Commands that act on a node select it with separate flags: `--project <ID>` (the whole project), plus `--file <PATH>` (a file, relative to the project root; needs `--project`), plus `--symbol <NAME>` (a class or function by qualified name, such as `StripeGateway.charge`; needs `--file`). The target of a `link` uses `--to-project`, `--to-file` and `--to-symbol` the same way, or names a custom node with `--to-custom <NAME>` (lowercase letters, digits and `.`, `_`, `:`, `-`; starts with a letter or digit; at most 64 characters, for example `kafka:orders` or `shared-postgres`). The first link to a custom name creates that node in the graph; later links reuse it. A custom node stands for something no project's code defines (a shared database, a queue, a third-party API) and appears in every view.
 7. Annotation kinds are `purpose`, `role`, `domain-term`, `tag` and `link`; `SPEC-semantic-layer.md` defines them precisely.
 8. LLM-assisted annotation is opt-in twice over: the workspace config must contain `semantic.llm` (`SPEC-workspace.md`), **and** the command must be given the flag. The supported providers are `copilot-cli`, `ollama` and `claude`. Only `claude` needs an API key; it is read from the environment variable named in `api_key_env`, only when a call is made, and is never stored in any config file.
 
@@ -119,7 +119,7 @@ Builds the AST data for the projects in the workspace and keeps it up to date. I
 
 - Prints progress to stderr and a summary to stdout, per project: files parsed, unchanged, removed, nodes re-linked, parse failures, and the number of annotations that became stale.
 - Fails with a hint when the workspace has no projects.
-- It reads project files and writes only to the storage backend (configured in the workspace config's `storage` block); it never changes a project's files.
+- It reads project files and writes only to Memgraph (configured in the workspace config's `storage` block); it never changes a project's files.
 - The MCP `reindex` tool runs the same use case, so both produce the same result.
 - Exit codes follow "Common behaviour"; how partial failures (some files fail to parse) are counted is defined in `SPEC-index.md`.
 
@@ -137,7 +137,7 @@ Keeps the index fresh while code changes, including edits made by AI tools. The 
 
 - **Process model:** a thread cannot outlive the CLI command, so `watch` starts a detached background process, managed the way `workbench mcp start` is (pid file and a control socket in `.workbench/run/`, directory `0700`, socket `0600`); the watching runs on a thread inside it.
 - **What it watches:** the paths of the workspace's projects, ignoring `.workbench/`, `.git/`, anything a project's `.gitignore` excludes, and the usual dependency and build folders (`node_modules`, `.venv`, `target`, `dist`, `__pycache__`). Changes are batched with a short delay (500 ms by default) so a burst of edits is indexed once.
-- **Needs:** the workspace config and the storage backend only. No server config, no secrets, so it works with `developer-support`.
+- **Needs:** the workspace config and Memgraph only. No server config, no secrets, so it works with `developer-support`.
 - **Never:** it never calls an LLM and never changes a project's files. It shares one lock with `workbench index` and the MCP `reindex` tool, so only one indexing run writes at a time; the others wait.
 - **Log:** `.workbench/logs/watch-<YYYYMMDD-HHMMSS>.log`, one file per start, owner-only, never containing a secret.
 - **AI platform hooks:** hooks that run `workbench watch` at session start, `workbench watch flush` after an edit and `workbench watch stop` at session end are installed only on request, by `workbench platform hooks install` (formats per platform in `SPEC-platform-setup.md`). `workbench platform setup` never installs hooks. Platforms without hooks can run the commands by hand.
@@ -156,17 +156,17 @@ Adds meaning to the indexed AST. Commands that act on a node select it with the 
 
 | Command | Meaning |
 |---|---|
-| `add --project <ID> [--file <PATH> [--symbol <NAME>]] --kind <KIND> --text <TEXT> [--to-project <ID> [--to-file <PATH> [--to-symbol <NAME>]]]` | Attach an annotation. The `--to-*` flags are required for `--kind link` and rejected otherwise. |
+| `add --project <ID> [--file <PATH> [--symbol <NAME>]] --kind <KIND> --text <TEXT> [--to-project <ID> [--to-file <PATH> [--to-symbol <NAME>]] \| --to-custom <NAME>]` | Attach an annotation. For `--kind link`, exactly one target is required: a node (`--to-project`, optionally with `--to-file` and `--to-symbol`) or a **custom node** (`--to-custom`); the `--to-*` flags are rejected for other kinds. |
 | `revise <ID> [--text <TEXT>]` | Replace the text of an annotation. Without `--text`, confirm that the annotation still holds and re-anchor it to the node's current version, which clears its stale flag. |
 | `retract <ID>` | Remove one annotation. |
 | `prune [--project <ID>] [--stale] [--orphaned] [--dry-run] [--yes]` | Remove stale annotations (their node changed) and orphaned entries (their node disappeared, kept as a tombstone so the annotation stayed visible). With neither `--stale` nor `--orphaned`, both. Lists what it will remove and asks to confirm; `--yes` skips the question, and is required when not run in a terminal. `--dry-run` only lists. |
 | `generate [--project <ID> [--file <PATH> [--symbol <NAME>]]] [--max-nodes <N>] [--dry-run]` | Ask the configured LLM to draft annotations for nodes that have none. Needs `semantic.llm` in the workspace config. Off unless this command (or `index --annotate`) is run. `--dry-run` prints how many nodes and roughly how much text would be sent, and makes no call. |
 | `list [--project <ID> [--file <PATH> [--symbol <NAME>]]] [--kind <KIND>] [--stale] [--orphaned]` | List annotations, optionally only stale or orphaned ones. |
-| `show --project <ID> [--file <PATH> [--symbol <NAME>]]` | Show a node with its annotations, its neighbours in the graph, and whether each annotation is current or stale. |
+| `show --project <ID> [--file <PATH> [--symbol <NAME>]]` | Show a node with its annotations, its neighbours in the graph (including linked custom nodes), and whether each annotation is current or stale. |
 
-- The target must exist in the index. If not, the command fails and suggests `workbench index`.
+- The target must exist in the index, except a custom node, which is created by its first link. If a project, file or symbol is not indexed, the command fails and suggests `workbench index`.
 - Annotations created here are recorded as written by a person. An agent cannot overwrite or remove them.
-- Annotations are stored in the storage backend through the `semantic-layer`. Those written by a person (`add`, `revise`, `retract`, `prune`) are also mirrored to `.workbench/memory/<project-id>/annotations.yml`, so `workbench index` can replay them if the backend is wiped or rebuilt; agent-written ones are not mirrored. Nothing is written into the project's source files.
+- Annotations are stored in Memgraph through the `semantic-layer`. Those written by a person (`add`, `revise`, `retract`, `prune`) are also mirrored to `.workbench/memory/<project-id>/annotations.yml`, so `workbench index` can replay them if Memgraph is wiped or rebuilt; agent-written ones are not mirrored. Nothing is written into the project's source files.
 - **LLM drafting** (`generate`, `index --annotate`):
   - Fails before any call if `semantic.llm` is missing, if `claude` is chosen and its environment variable is unset, if `copilot-cli` is chosen and the `copilot` program cannot be found, or if `ollama` is chosen and its endpoint cannot be reached; the error says which.
   - Sends only the source of indexed nodes (signature, body and nearby context, defined in `SPEC-semantic-layer.md`), never other files.

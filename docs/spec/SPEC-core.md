@@ -24,7 +24,7 @@ Depends on [`workspace`](SPEC-workspace.md) (approved). Used by [`cli`](SPEC-cli
 5. There is no hot reload. Changing a config means `workbench mcp restart`.
 6. *(Confirmed)* The MCP SDK is the official Rust SDK (`rmcp`); its version is pinned when the dependency is added. It is used with a custom transport over the socket (to be confirmed when the dependency is added).
 7. Unix-like systems (macOS, Linux) first. A Windows transport (named pipes) is not in this spec.
-8. *(Confirmed)* The per-session log file **is** the audit record. There is no separate copy in the storage backend. It is a JSON Lines file (one event per line) so that other modules can read it; `workbench mcp logs --session` renders it for people (`--raw` shows the lines as written). `SPEC-audit.md` defines the event format.
+8. *(Confirmed)* The per-session log file **is** the audit record. There is no separate copy in Memgraph. It is a JSON Lines file (one event per line) so that other modules can read it; `workbench mcp logs --session` renders it for people (`--raw` shows the lines as written). `SPEC-audit.md` defines the event format.
 
 ## Objective
 
@@ -98,7 +98,7 @@ There is no TCP or HTTP listener. Nothing is reachable from the network.
 | **Session log = the audit record** (`sessions/<session-id>.log`) | `operational-support` only. One file per session. | A record of the session, as JSON Lines: when it began and ended, the context it started in, each tool call (name, arguments, duration, outcome and a short result summary), context switches (with the check result), and errors, including connections that went down. |
 
 - The directory is `logs.dir` in the server config, relative to the workspace root or absolute; the default is `.workbench/logs`. `developer-support` never reads the server config, so it always uses the default directory and writes only server logs.
-- The session log is the **only** audit record: nothing is copied to the storage backend. The server only appends to it and never rewrites or deletes events. It is JSON Lines so `flow-memory` and other readers can parse it; `workbench mcp logs --session ID` renders it for people and `--raw` prints the lines as written. The event format is defined in `SPEC-audit.md`.
+- The session log is the **only** audit record: nothing is copied to Memgraph. The server only appends to it and never rewrites or deletes events. It is JSON Lines so `flow-memory` and other readers can parse it; `workbench mcp logs --session ID` renders it for people and `--raw` prints the lines as written. The event format is defined in `SPEC-audit.md`.
 - A session is identified by the shim's token, so a session that continues across a `restart` keeps appending to the same file.
 - `workbench mcp logs` finds the directory the same way. For `operational-support` it reads `logs.dir` from the server config; if the config cannot be read it says so and falls back to the default directory.
 - Logs can hold query results and log lines from production systems, so the directory is created `0700` and every file `0600`. No secret ever appears in a log: secrets are never exposed outside the point where a connection is opened.
@@ -285,7 +285,7 @@ Follow the existing conventions: one error enum per concern, doc comments on eve
   - Two shims at once keep separate sessions.
   - `connect` with no server running exits non-zero with the `start` hint; its stdout stays empty.
   - The socket directory is `0700` and the socket `0600`.
-  - Session log as audit record: every tool call, context switch and error in a session appears as one JSON line in that session's file; the lines parse; events are only ever appended; nothing about the session is written to the storage backend.
+  - Session log as audit record: every tool call, context switch and error in a session appears as one JSON line in that session's file; the lines parse; events are only ever appended; nothing about the session is written to Memgraph.
   - Logs: `logs` prints the last lines of the latest server log and `-f` follows new ones; every `start` creates a new server log; in `operational-support` each session gets its own file under `logs.dir` (read from the server config), and a session that spans a `restart` keeps appending to the same file; `developer-support` writes no session logs and uses the default directory; `--sessions` and `--session` list and print them; the logs directory is `0700` and the files `0600`; a known secret value never appears in any log, stdout or stderr, even at the most verbose log level.
 - Each row of the mode table, each command and each rule in "Registry" has a test.
 
