@@ -12,7 +12,7 @@ Module `workspace` from the [capability map](capability-map.md). Status: **appro
 6. The file adapters (YAML config, memory folders, the existing `.workbench/` directory store) live in a new shared crate, `lib/adapters`, because both the CLI and the MCP server (`workbench mcp`) read the config.
 7. The config carries `version: 1` so later changes can migrate old files.
 8. *(Amendment)* The config can hold the settings for LLM-assisted semantic annotation, under `semantic.llm`. The supported providers are `copilot-cli`, `ollama` and `claude`. The settings are not secrets: provider, model, optional endpoint and, for `claude`, the *name* of the environment variable that holds the API key. The key itself is never stored in the config, not even inline.
-9. *(Amendment, from `SPEC-core.md`)* The config also holds the storage settings, under `storage`, because `developer-support` and the CLI need storage without the server config. Workbench has one storage, Memgraph, running on the person's own machine. Its password is referenced by environment variable name, never stored. The meaning of each setting is defined in `SPEC-storage.md`. Whether it is used is decided by CLI flags (`SPEC-cli.md`), not by the config.
+9. *(Amendment, from `SPEC-core.md`)* The config also holds the storage settings, under `storage`, because `developer-support` and the CLI need storage without the server config. Workbench has one storage, Memgraph, running on the person's own machine. Its password is referenced by environment variable name, never stored. The meaning of each setting is defined in `SPEC-storage.md`. Every field is optional and has a default; `workbench init` writes the block out in full so the settings are visible.
 10. *(Amendment, from `SPEC-storage.md`)* Docker Compose files feed the overview of how projects connect. They normally live inside each project, so a project can name its Compose file; a Compose file that spans projects (for example one at the repository root) is listed at the top level of the config. The workspace also has its own `INIT-MEMORY.md`, where a person writes down how the services fit together; it is read as context and is not parsed into links.
 
 ## Objective
@@ -34,10 +34,10 @@ version: 1
 lsp:                         # optional workspace-wide defaults, per language
   python:
     server: basedpyright
-storage:                     # optional; Workbench's one storage is Memgraph, on your own machine
+storage:                     # written by `workbench init`; every field optional. Workbench's one storage is Memgraph, on your own machine
   host: localhost            # default localhost
   port: 7687                 # default 7687
-  namespace: billing-3f9a    # keeps this workspace apart on one Memgraph; written by `workbench init`
+  namespace: billing-3f9a    # one per workspace, unique on this Memgraph; written by `workbench init`
   # username: workbench      # optional; Memgraph has no login unless one is set up
   # password_env: MEMGRAPH_PASSWORD   # the variable's name, never the password
 compose:                     # optional; Compose files that span projects, for example one at the repository root
@@ -113,7 +113,7 @@ Every module that queries projects takes a scope: all projects (the default) or 
 - The content is seeded from context the project already has: `README.md`, `CLAUDE.md` and `AGENTS.md` at the project root, whichever exist. If none exist, it is an empty template.
 - The seed is a template with fixed headings (Purpose, Architecture, How to run, Conventions, Gotchas) followed by an "Existing context" section that quotes each source file under its name, each capped at 20 KB.
 - People edit this file. The engine never rewrites it after creation.
-- The same folder also holds `annotations.yml`, the mirror of annotations written by people. It is created empty here and kept up to date by `semantic-layer` (`SPEC-semantic-layer.md`). When the storage has lost annotations (a wiped or rebuilt Memgraph), they are replayed from this file, so a person's customisations are kept when the AST is parsed again and when an LLM drafts annotations.
+- The same folder also holds `annotations.yml`, the mirror of annotations written by people. It is created empty here and kept up to date by `semantic-layer` (`SPEC-semantic-layer.md`). When the storage has lost annotations (a wiped or rebuilt Memgraph), `workbench index` replays them from this file, so a person's customisations are kept when the AST is parsed again and when an LLM drafts annotations.
 
 ### Workspace memory
 
@@ -164,7 +164,7 @@ The engine has no I/O. `services/cli` (the CLI and the MCP server) picks adapter
 | Port | Responsibility |
 |---|---|
 | `WorkspaceStore` | `load()` returns a validated `WorkspaceConfig`; `save(&config)`; `create_empty()` |
-| `MemoryStore` | `create(project_id, seed)` creates the folder and `INIT-MEMORY.md` if absent, never overwrites; `create_workspace()` does the same for the workspace-level file |
+| `MemoryStore` | `create(project_id, seed)` creates the folder, `INIT-MEMORY.md` and an empty `annotations.yml` if absent, never overwrites; `create_workspace()` does the same for the workspace-level file |
 | `ContextSource` | `read(project_path)` returns the seed files that exist, each capped at 20 KB |
 
 ## Code Style
@@ -199,7 +199,8 @@ Conventions follow the existing code: one error enum in `error.rs`, doc comments
   - Duplicate ids, mismatched language and dependency manager, and an unknown version are rejected.
   - Scope resolution: all, a subset, an unknown id.
   - Memory seed: sources found, none found, oversized source is capped.
-- **Adapter tests** (in `lib/adapters`): YAML round-trip; a config with a missing `path` fails with a clear error; `MemoryStore` leaves an existing `INIT-MEMORY.md` untouched.
+  - `init` content: the `storage` block has `host: localhost`, `port: 7687` and a namespace of the folder name plus four hexadecimal characters; two inits give two different namespaces.
+- **Adapter tests** (in `lib/adapters`): YAML round-trip; a config with a missing `path` fails with a clear error; `MemoryStore` creates an empty `annotations.yml` with `INIT-MEMORY.md` and leaves existing copies of both untouched.
 - Coverage target: every rule in the "Project rules" table has a test.
 
 ## Boundaries

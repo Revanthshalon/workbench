@@ -49,7 +49,7 @@ Creates, under `<DIR>` (default `.`):
 
 | Created | Content |
 |---|---|
-| `.workbench/config.yml` | `version: 1`, a `storage` block (host, port and a unique `namespace`) and `projects: []` (the format in `SPEC-workspace.md`) |
+| `.workbench/config.yml` | `version: 1`, a `storage` block (`host: localhost`, `port: 7687` and a unique `namespace`) and `projects: []` (the format in `SPEC-workspace.md`) |
 | `.workbench/memory/INIT-MEMORY.md` | An empty workspace-level context template for how the projects connect (`SPEC-workspace.md`) |
 | `.workbench/mcp/config.yml` | The server config template (`SPEC-core.md`); added once `core` defines it |
 | `.workbench/mcp/contexts/<name>.yml` | One context config template per default context (`production`, `staging`, `testing`); content owned by `SPEC-contexts.md` |
@@ -104,7 +104,7 @@ Prints one line per project: id, language, dependency manager, path. Prints a sh
 
 ### `workbench project remove <ID>`
 
-Removes the project from the config. Keeps `.workbench/memory/<id>/`. `--purge-memory` deletes that folder too, after printing what it will delete. An unknown id fails and lists the known ids.
+Removes the project from the config. Keeps `.workbench/memory/<id>/` (`INIT-MEMORY.md` and `annotations.yml`, so re-adding the project finds both). It does not touch the storage: the project's indexed data is removed by the next `workbench index` that covers every project (`SPEC-index.md`). `--purge-memory` deletes that folder too, after printing what it will delete. An unknown id fails and lists the known ids.
 
 ### `workbench index [options]`
 
@@ -166,7 +166,7 @@ Adds meaning to the indexed AST. Commands that act on a node select it with the 
 
 - The target must exist in the index. If not, the command fails and suggests `workbench index`.
 - Annotations created here are recorded as written by a person. An agent cannot overwrite or remove them.
-- Annotations are stored in the storage backend through the `semantic-layer`. Those written by a person (`add`, `revise`, `retract`, `prune`) are also mirrored to `.workbench/memory/<project-id>/annotations.yml`, so they survive if the backend is wiped; agent-written ones are not mirrored. Nothing is written into the project's source files.
+- Annotations are stored in the storage backend through the `semantic-layer`. Those written by a person (`add`, `revise`, `retract`, `prune`) are also mirrored to `.workbench/memory/<project-id>/annotations.yml`, so `workbench index` can replay them if the backend is wiped or rebuilt; agent-written ones are not mirrored. Nothing is written into the project's source files.
 - **LLM drafting** (`generate`, `index --annotate`):
   - Fails before any call if `semantic.llm` is missing, if `claude` is chosen and its environment variable is unset, if `copilot-cli` is chosen and the `copilot` program cannot be found, or if `ollama` is chosen and its endpoint cannot be reached; the error says which.
   - Sends only the source of indexed nodes (signature, body and nearby context, defined in `SPEC-semantic-layer.md`), never other files.
@@ -290,7 +290,7 @@ Follow the existing conventions: doc comments on every public item, no `unwrap` 
 
 ## Testing Strategy
 
-- **Engine unit tests** with fake ports: `add_project` rolls back on failure, a duplicate id is rejected, `remove_project` keeps memory by default, `init` is refused when a config exists.
+- **Engine unit tests** with fake ports: `add_project` rolls back on failure, a duplicate id is rejected, `remove_project` keeps memory by default, `init` is refused when a config exists, and the config it writes holds the `storage` block (`localhost`, `7687`, a unique namespace).
 - **Adapter tests** (in `lib/adapters`): detection against fixture directories (uv, poetry, angular with each lock file, ambiguous, empty); `.gitignore` handling (missing file, existing entry, existing file without a trailing newline).
 - **Integration tests** (`services/cli/tests/cli.rs`): run the real binary in a temp directory through the sequence `init`, `project add`, `list`, `remove`, and check the files and exit codes.
 - **LLM drafting and prune:** with a fake `LlmClient` port: no call is made without the flag, without `semantic.llm`, or with `--dry-run`; the missing-variable error names the variable; a person-written annotation is never overwritten; `prune --dry-run` removes nothing; `prune` without `--yes` asks first and refuses to run non-interactively; `prune` removes exactly the stale and orphaned entries it listed.
@@ -308,13 +308,13 @@ Follow the existing conventions: doc comments on every public item, no `unwrap` 
 ## Success Criteria
 
 1. `workbench init` creates `.workbench/config.yml` and a `.gitignore` entry, and a second run fails with no changes.
-2. `project add` on a uv project, a poetry project and an Angular project (each package manager) detects correctly and creates the memory folder.
+2. `project add` on a uv project, a poetry project and an Angular project (each package manager) detects correctly and creates the memory folder with `INIT-MEMORY.md` and an empty `annotations.yml`.
 3. An ambiguous or undetectable project fails and names the flag to pass.
 4. A failure in any step of `project add` leaves the config and memory unchanged.
 5. `project list` and `project remove` behave as described, and `remove` keeps the memory folder unless `--purge-memory` is given.
 6. From a subdirectory, commands find the workspace; outside one they print the `no .workbench/ found` error.
 7. `workbench index` indexes all projects or the chosen ones, a second run parses nothing that has not changed, `--full` re-parses everything, and an unknown project fails with the list of known ids.
-8. `workbench semantic add` attaches an annotation to an indexed node; `list --stale` shows annotations whose node changed after the next `index`; `retract` removes one; a target that is not indexed fails with a hint. A person-written annotation also appears in `.workbench/memory/<id>/annotations.yml`; an agent-written one does not.
+8. `workbench semantic add` attaches an annotation to an indexed node; `list --stale` shows annotations whose node changed after the next `index`; `retract` removes one; a target that is not indexed fails with a hint. A person-written annotation also appears in `.workbench/memory/<id>/annotations.yml`, from where `workbench index` replays it into an emptied storage; an agent-written one does not.
 9. `workbench semantic prune` lists and then removes exactly the stale and orphaned entries in scope, does nothing under `--dry-run`, and refuses to run non-interactively without `--yes`.
 10. `workbench semantic generate` and `index --annotate` call the LLM only when both the flag and `semantic.llm` are present, record their output as agent-written, and never touch a person-written annotation; `--dry-run` makes no call.
 11. `workbench context check` prints one line per configured system with its status, checks only the named context, exits `1` when any check fails, never prints a secret, and fails clearly when the server config or the context file is missing or still holds placeholders.

@@ -46,7 +46,7 @@ Workbench keeps the code graph and its semantic annotations in **Memgraph**, run
 docker run -p 7687:7687 memgraph/memgraph
 ```
 
-The host, port and `namespace` (which keeps workspaces apart on one Memgraph) are in the `storage` block of `.workbench/config.yml`. `workbench storage status` shows where Memgraph is and whether it answers. Agents query the graph with one tool, `graph_query`, which takes Cypher.
+The host, port and `namespace` are in the `storage` block of `.workbench/config.yml`, which `workbench init` writes with `host: localhost`, `port: 7687` and a namespace unique to the workspace (it keeps workspaces apart on one Memgraph). The annotations people write are also kept in `.workbench/memory/<project>/annotations.yml`, so they can be replayed if Memgraph is rebuilt. `workbench storage status` shows where Memgraph is and whether it answers. Agents query the graph with one tool, `graph_query`, which takes Cypher.
 
 ## Development
 
