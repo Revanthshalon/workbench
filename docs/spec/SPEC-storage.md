@@ -9,7 +9,7 @@ Depends on [`core`](SPEC-core.md) (approved) and reads the `storage` block of th
 1. Workbench has **one storage: Memgraph**, running on the person's own machine. It is configured by the `storage` block of the **workspace config** (host, port, optional username, `password_env`, `namespace`), so `developer-support` and the CLI can use it without the server config. The defaults are host `localhost` and port `7687`. There is no other backend and no choice of backend.
 2. The password is never stored: `storage.password_env` names an environment variable. The value is a `secrecy` secret, read only when a connection is opened.
 3. `graph`, `semantic-layer`, `flow-memory` and `incidents` depend on engine ports, not on Memgraph. The ports are defined in the engine; the one adapter lives in `lib/adapters`. The only place Memgraph's language shows is the `graph_query` tool, which takes Cypher.
-4. The AST graph and the semantic annotations live here. The audit record does **not**: it is the per-session log file (`SPEC-core.md`). Annotations written by people and flows are also mirrored to files by their own modules.
+4. The AST graph and the semantic annotations live here. The audit record does **not**: it is the per-session log file (`SPEC-core.md`). **Annotations written by people are stored here and also mirrored to `.workbench/memory/<project-id>/annotations.yml`** (the project's folder, created when the project is added), so they can be replayed into a Memgraph that was emptied or rebuilt, and customisations survive re-parsing the AST and LLM-drafted annotations (`SPEC-semantic-layer.md`). Agent-written annotations are not mirrored, because they can be regenerated. Flows are likewise mirrored to files by their own module.
 5. The graph is split into **views**: a project's working tree, and one per context branch (`SPEC-contexts.md`).
 6. Several processes use the same storage at the same time: CLI commands, the background MCP server and the background watcher. The Memgraph server handles concurrent access; all indexing runs also share one lock so only one indexing run writes at a time.
 
@@ -19,7 +19,7 @@ Depends on [`core`](SPEC-core.md) (approved) and reads the `storage` block of th
 2. **Writes are whole batches.** A write takes a complete value (for example everything parsed from a set of files in one view) and applies it atomically. No transaction object crosses the port, so no Memgraph detail leaks out.
 3. **Migrations are forward-only and automatic.** Every module registers its own migrations; they run when a process opens the storage. A database written by a newer `workbench` than the one opening it is refused with a clear message, never changed.
 4. *(Confirmed)* **One storage per person.** There is no shared server: Memgraph runs on the person's own machine. A `storage.namespace` keeps several of that person's workspaces apart on one local Memgraph.
-5. `workbench init` writes a unique `namespace` into the new workspace's `storage` block (the folder name plus four random hexadecimal characters), so two workspaces never share data by accident. A config with no `namespace` uses the namespace `default`, which is only safe for a single workspace.
+5. `workbench init` writes the whole `storage` block into the new workspace's config: `host: localhost`, `port: 7687` and a unique `namespace` (the folder name plus four random hexadecimal characters), so the settings are visible and editable and two workspaces never share data by accident. A config that lacks the block, or a field of it, uses the same defaults (`localhost`, `7687`), and a missing `namespace` is `default`, which is only safe for a single workspace.
 6. *(Confirmed)* Search is a case-insensitive contains-scan with a result limit: `search_code` and annotation search do not rely on a full-text engine. That is acceptable for the first release, and using Memgraph's own text indexes is on the roadmap.
 7. Data is sensitive (code structure, annotations, incident text), so Memgraph should listen only on the person's own machine.
 8. *(Confirmed)* **Memgraph is required.** Workbench does not install, start or stop it: a person runs it, for example with `docker run -p 7687:7687 memgraph/memgraph`. Because `developer-support` is the default mode and needs storage, it will not start until Memgraph answers.
@@ -192,7 +192,7 @@ Follow the existing conventions: one error enum per concern, doc comments on eve
 
 ## Success Criteria
 
-1. With no `storage` block, a workspace uses Memgraph at `localhost:7687` in the namespace `default`; `workbench init` writes a unique namespace into the new config.
+1. `workbench init` writes a `storage` block with `host: localhost`, `port: 7687` and a unique namespace into the new config; with no `storage` block, or a field missing, a workspace uses Memgraph at `localhost:7687` in the namespace `default`.
 2. The shared suite passes against the in-memory fake in the normal run and against Memgraph (with `--ignored`, and in CI), with identical results.
 3. The CLI, the background server and the watcher use one Memgraph at the same time without corruption; conflicting writes retry, then report `Conflict`.
 4. Two indexing runs never write at once; the second waits for the first.

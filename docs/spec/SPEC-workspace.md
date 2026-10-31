@@ -7,7 +7,7 @@ Module `workspace` from the [capability map](capability-map.md). Status: **appro
 1. The workspace root is the directory that contains `.workbench/`. A relative project path is resolved against it.
 2. A project does not have to sit under the root. The configured path is the source of truth: it can be relative to the root (`../other-repo`) or absolute, because a workspace can span several repos.
 3. `language` is the project's main language: `python` or `angular`. YAML, Dockerfile and Docker Compose files are file types found *inside* projects, not project languages.
-4. The new config replaces today's empty `config.yml`. `workbench init` now writes `version: 1` and `projects: []`. Adding projects is a separate command, specified in `SPEC-cli.md`.
+4. The new config replaces today's empty `config.yml`. `workbench init` now writes `version: 1`, a `storage` block (`host: localhost`, `port: 7687` and a unique `namespace`) and `projects: []`. Adding projects is a separate command, specified in `SPEC-cli.md`.
 5. This module owns the *model, validation, storage ports and memory layout*. The commands that add projects live in `SPEC-cli.md`.
 6. The file adapters (YAML config, memory folders, the existing `.workbench/` directory store) live in a new shared crate, `lib/adapters`, because both the CLI and the MCP server (`workbench mcp`) read the config.
 7. The config carries `version: 1` so later changes can migrate old files.
@@ -93,7 +93,7 @@ projects:
 | `storage.port` | Optional, default `7687`. |
 | `storage.username` | Optional. Memgraph has no login unless one is set up. |
 | `storage.password_env` | Optional. The name of an environment variable; the value is held as a `secrecy` secret and read only when a connection is opened. |
-| `storage.namespace` | Optional. Keeps this workspace's data apart from other workspaces on the same local Memgraph. `workbench init` writes a unique one (the folder name plus four random hexadecimal characters); when absent it is `default`, which is only safe for a single workspace. |
+| `storage.namespace` | Optional. **The namespace identifies the workspace in the database: one per workspace, unique on a given Memgraph.** It keeps this workspace's data apart from other workspaces on the same local Memgraph. `workbench init` writes a unique one (the folder name plus four random hexadecimal characters); when absent it is `default`, which is only safe for a single workspace. |
 | `semantic.llm.provider` | Required when `semantic.llm` is present. One of `copilot-cli`, `ollama`, `claude`. |
 | `semantic.llm.model` | Required for `claude` and `ollama`; optional for `copilot-cli`, which uses its own default. |
 | `semantic.llm.endpoint` | Optional, `ollama` and `claude` only. For `ollama` the default is `http://localhost:11434`. |
@@ -109,11 +109,11 @@ Every module that queries projects takes a scope: all projects (the default) or 
 
 `.workbench/memory/<project-id>/INIT-MEMORY.md` exists for every project.
 
-- The folder and file are created when a project is added; an existing `INIT-MEMORY.md` is **never overwritten**.
+- The folder, `INIT-MEMORY.md` and an empty `annotations.yml` are created when a project is added (also by the CLI's `project add`); an existing `INIT-MEMORY.md` or `annotations.yml` is **never overwritten**.
 - The content is seeded from context the project already has: `README.md`, `CLAUDE.md` and `AGENTS.md` at the project root, whichever exist. If none exist, it is an empty template.
 - The seed is a template with fixed headings (Purpose, Architecture, How to run, Conventions, Gotchas) followed by an "Existing context" section that quotes each source file under its name, each capped at 20 KB.
 - People edit this file. The engine never rewrites it after creation.
-- The same folder also holds `annotations.yml`, the mirror of annotations written by people. It is created and kept up to date by `semantic-layer` (`SPEC-semantic-layer.md`), not by this module.
+- The same folder also holds `annotations.yml`, the mirror of annotations written by people. It is created empty here and kept up to date by `semantic-layer` (`SPEC-semantic-layer.md`). When the storage has lost annotations (a wiped or rebuilt Memgraph), they are replayed from this file, so a person's customisations are kept when the AST is parsed again and when an LLM drafts annotations.
 
 ### Workspace memory
 
@@ -215,7 +215,7 @@ Conventions follow the existing code: one error enum in `error.rs`, doc comments
 1. `workbench init` writes a `config.yml` that loads back as an empty, valid workspace (`version: 1`, a `storage` block, no projects) and an empty workspace-level `.workbench/memory/INIT-MEMORY.md`.
 2. A config with two valid projects, including `lsp` blocks, `compose` entries, a `storage` block and a `semantic.llm` block, loads, validates and saves unchanged.
 3. Each rule in the "Project rules" table is rejected with an error that names the project and field when broken.
-4. Adding a project creates `.workbench/memory/<id>/INIT-MEMORY.md`, seeded from existing context, and a second add never overwrites it.
+4. Adding a project creates `.workbench/memory/<id>/INIT-MEMORY.md`, seeded from existing context, and an empty `annotations.yml`, and a second add never overwrites either.
 5. The effective LSP settings of a project resolve by the precedence rule (project over workspace default over catalog), field by field.
 6. A scope of "all" returns every project; a scope naming an unknown id fails and names it.
 7. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass.

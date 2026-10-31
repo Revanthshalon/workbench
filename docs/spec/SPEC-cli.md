@@ -81,7 +81,7 @@ Steps, all or nothing:
 1. Resolve and validate the path (exists, is a directory).
 2. Detect language and dependency manager, unless given.
 3. Build the project and validate it against the workspace rules (unique id, valid pair, and so on).
-4. Create `.workbench/memory/<id>/INIT-MEMORY.md`, seeded as in `SPEC-workspace.md`.
+4. Create `.workbench/memory/<id>/INIT-MEMORY.md`, seeded as in `SPEC-workspace.md`, and an empty `annotations.yml` beside it.
 5. Save the config.
 
 If any step fails, the config and the memory folder are left as they were.
