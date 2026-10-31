@@ -83,7 +83,7 @@ projects:
 | `dependency_manager` | Required. `poetry` or `uv` for Python; `npm`, `pnpm`, `yarn` or `bun` for Angular (Vite is the build tool, not recorded here). A mismatched pair is an error. |
 | `environment.venv` | Optional, Python only (an error on an Angular project). Relative to the project path. |
 | `environment.activate` | Optional. A command prefix used to launch tools in the project (for example `uv run` or `poetry run`), including the project's language server. |
-| `compose` (project) | Optional. A path relative to the project, or absolute. If absent, the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` at the project root is used, and having none is fine. A listed path that does not exist is an error. |
+| `compose` (project) | Optional. A path relative to the project, or absolute. If absent, the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` at the project root is used, and having none is fine. A listed path that does not exist is an error when `project add` is given it or a command reads it, not on load. |
 | top-level `compose[].path` | Optional list of Compose files that span projects. Relative to the workspace root, or absolute. Must exist when a command reads it (not on load). Listing the same path twice is an error. |
 | top-level `compose[].services` | Optional map from a Compose service name to a project id, for services whose build context cannot be matched to a project (for example image-only services). Unknown project ids are rejected. |
 | `lsp.enabled` | Optional, default `true`. `false` turns the language server off for this project. |

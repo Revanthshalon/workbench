@@ -4,7 +4,7 @@ Module `cli` from the [capability map](capability-map.md). Status: **approved.**
 
 Depends on [`workspace`](SPEC-workspace.md) (approved) and, for the `mcp` command group, [`core`](SPEC-core.md). `storage status` depends on `storage`, and `context check | sync` on `contexts`. The `index`, `watch` and `semantic` command groups also depend on `graph` and `semantic-layer`; they are specified here as the command surface and wired once those modules exist.
 
-**Build slices.** *Slice A* (buildable now): `init`, `project add | list | remove`, workspace discovery, common behaviour, and the `mcp` and `storage status` wiring once `storage` is approved. *Later slices*, each started only when the specs it needs are approved: `index` and `watch` (`SPEC-index.md`, `SPEC-graph.md`), `semantic` (`SPEC-semantic-layer.md`), `context check | sync` (`contexts`, `storage`, `graph`) and `platform` (`SPEC-platform-setup.md`, `SPEC-lsp.md`).
+**Build slices.** *Slice A* (buildable now, needs only the approved `workspace` spec): `init` (without `--platform`, and without the `.workbench/mcp/` templates, which are added when `core`'s model is built), `project add | list | remove`, workspace discovery and common behaviour. *Wired as their modules are built:* the `mcp` group (`core`) and `storage status` (`storage`; both specs are approved, the code is not yet). *Later slices*, each started only when the specs it needs are approved: `index` and `watch` (`SPEC-index.md`, `SPEC-graph.md`), `semantic` (`SPEC-semantic-layer.md`), `context check | sync` (`contexts`, `storage`, `graph`) and `platform` (`SPEC-platform-setup.md`, `SPEC-lsp.md`).
 
 ## Decisions
 
