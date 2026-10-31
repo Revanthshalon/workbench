@@ -1,6 +1,6 @@
 # Spec: storage
 
-Module `storage` from the [capability map](capability-map.md). Status: **draft, awaiting review.**
+Module `storage` from the [capability map](capability-map.md). Status: **approved.**
 
 Depends on [`core`](SPEC-core.md) (approved) and reads the `storage` block of the workspace config ([`workspace`](SPEC-workspace.md), approved). Used by `graph`, `semantic-layer`, `flow-memory`, `incidents`, the indexing runs (`workbench index`, `workbench watch`, MCP `reindex`) and `workbench storage status`.
 
