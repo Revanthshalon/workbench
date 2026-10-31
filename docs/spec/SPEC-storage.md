@@ -4,7 +4,7 @@ Module `storage` from the [capability map](capability-map.md). Status: **draft, 
 
 Depends on [`core`](SPEC-core.md) (approved) and reads the `storage` block of the workspace config ([`workspace`](SPEC-workspace.md), approved). Used by `graph`, `semantic-layer`, `flow-memory`, `incidents`, the indexing runs (`workbench index`, `workbench watch`, MCP `reindex`) and `workbench storage status`.
 
-## Decisions already made elsewhere
+## Decisions
 
 1. Workbench has **one storage: Memgraph**, running on the person's own machine. It is configured by the `storage` block of the **workspace config** (host, port, optional username, `password_env`, `namespace`), so `developer-support` and the CLI can use it without the server config. The defaults are host `localhost` and port `7687`. There is no other backend and no choice of backend.
 2. The password is never stored: `storage.password_env` names an environment variable. The value is a `secrecy` secret, read only when a connection is opened.
@@ -12,19 +12,16 @@ Depends on [`core`](SPEC-core.md) (approved) and reads the `storage` block of th
 4. The AST graph and the semantic annotations live here. The audit record does **not**: it is the per-session log file (`SPEC-core.md`). **Annotations written by people are stored here and also mirrored to `.workbench/memory/<project-id>/annotations.yml`** (the project's folder, created when the project is added), so `workbench index` can replay them into a Memgraph that was emptied or rebuilt, and customisations survive re-parsing the AST and LLM-drafted annotations (`SPEC-semantic-layer.md`). Agent-written annotations are not mirrored, because they can be regenerated. Flows are likewise mirrored to files by their own module.
 5. The graph is split into **views**: a project's working tree, and one per context branch (`SPEC-contexts.md`).
 6. Several processes use the same storage at the same time: CLI commands, the background MCP server and the background watcher. The Memgraph server handles concurrent access; all indexing runs also share one lock so only one indexing run writes at a time.
-
-## Assumptions (correct me now)
-
-1. *(Confirmed)* **Writes and the engine's own reads use typed operations; agents get a free-form read-only query.** Each port offers the typed operations its consumer needs (upsert the nodes of a file, look up a symbol, walk callers to a depth). On top of that, the MCP `graph_query` tool takes a **free-form Cypher query**. The query always runs read-only, over a documented query schema (see "Free-form graph queries").
-2. **Writes are whole batches.** A write takes a complete value (for example everything parsed from a set of files in one view) and applies it atomically. No transaction object crosses the port, so no Memgraph detail leaks out.
-3. **Migrations are forward-only and automatic.** Every module registers its own migrations; they run when a process opens the storage. A database written by a newer `workbench` than the one opening it is refused with a clear message, never changed.
-4. *(Confirmed)* **One storage per person.** There is no shared server: Memgraph runs on the person's own machine. A `storage.namespace` keeps several of that person's workspaces apart on one local Memgraph.
-5. `workbench init` writes the whole `storage` block into the new workspace's config: `host: localhost`, `port: 7687` and a unique `namespace` (the folder name plus four random hexadecimal characters), so the settings are visible and editable and two workspaces never share data by accident. A config that lacks the block, or a field of it, uses the same defaults (`localhost`, `7687`), and a missing `namespace` is `default`, which is only safe for a single workspace.
-6. *(Confirmed)* Search is a case-insensitive contains-scan with a result limit: `search_code` and annotation search do not rely on a full-text engine. That is acceptable for the first release, and using Memgraph's own text indexes is on the roadmap.
-7. Data is sensitive (code structure, annotations, incident text), so Memgraph should listen only on the person's own machine.
-8. *(Confirmed)* **Memgraph is required.** Workbench does not install, start or stop it: a person runs it, for example with `docker run -p 7687:7687 memgraph/memgraph`. Because `developer-support` is the default mode and needs storage, it will not start until Memgraph answers.
-9. For `graph_query`, **the guard is the enforcement**: it rejects every write before the query reaches Memgraph. The query also runs in a read-mode transaction, but that is a second layer only, because it is not confirmed that Memgraph rejects writes in a read-mode transaction. To be confirmed when the adapter is built, and covered by the tests either way.
-10. *(Confirmed)* **One graph per view, so queries cross projects but never views; the guard keeps them inside the workspace and the session's view.** Each view is a complete graph of the workspace; contexts differ by branch, not by project list. Every node carries `namespace`, `view` and `project`. A free-form query must be anchored at a node constrained to `$namespace` and `$view` (both bound by the adapter and reserved), which is enough because relationships never join different namespaces or views. "Partition" means a logical grouping by `project` and `view`, never graph partitioning in the algorithmic sense.
+7. **Writes and the engine's own reads use typed operations; agents get a free-form read-only query.** Each port offers the typed operations its consumer needs (upsert the nodes of a file, look up a symbol, walk callers to a depth). On top of that, the MCP `graph_query` tool takes a **free-form Cypher query**. The query always runs read-only, over a documented query schema (see "Free-form graph queries").
+8. **Writes are whole batches.** A write takes a complete value (for example everything parsed from a set of files in one view) and applies it atomically. No transaction object crosses the port, so no Memgraph detail leaks out.
+9. **Migrations are forward-only and automatic.** Every module registers its own migrations; they run when a process opens the storage. A database written by a newer `workbench` than the one opening it is refused with a clear message, never changed.
+10. **One storage per person.** There is no shared server: Memgraph runs on the person's own machine. A `storage.namespace` keeps several of that person's workspaces apart on one local Memgraph.
+11. `workbench init` writes the whole `storage` block into the new workspace's config: `host: localhost`, `port: 7687` and a unique `namespace` (the folder name plus four random hexadecimal characters), so the settings are visible and editable and two workspaces never share data by accident. A config that lacks the block, or a field of it, uses the same defaults (`localhost`, `7687`), and a missing `namespace` is `default`, which is only safe for a single workspace.
+12. Search is a case-insensitive contains-scan with a result limit: `search_code` and annotation search do not rely on a full-text engine. That is acceptable for the first release, and using Memgraph's own text indexes is on the roadmap.
+13. Data is sensitive (code structure, annotations, incident text), so Memgraph should listen only on the person's own machine.
+14. **Memgraph is required.** Workbench does not install, start or stop it: a person runs it, for example with `docker run -p 7687:7687 memgraph/memgraph`. Because `developer-support` is the default mode and needs storage, it will not start until Memgraph answers.
+15. For `graph_query`, **the guard is the enforcement**: it rejects every write before the query reaches Memgraph. The query also runs in a read-mode transaction, but that is a second layer only, because it is not confirmed that Memgraph rejects writes in a read-mode transaction. To be confirmed when the adapter is built, and covered by the tests either way.
+16. **One graph per view, so queries cross projects but never views; the guard keeps them inside the workspace and the session's view.** Each view is a complete graph of the workspace; contexts differ by branch, not by project list. Every node carries `namespace`, `view` and `project`. A free-form query must be anchored at a node constrained to `$namespace` and `$view` (both bound by the adapter and reserved), which is enough because relationships never join different namespaces or views. "Partition" means a logical grouping by `project` and `view`, never graph partitioning in the algorithmic sense.
 
 ## Objective
 
@@ -81,7 +78,7 @@ Opening storage is part of the start-up of both MCP modes (`SPEC-core.md`, "buil
 - Uniqueness constraints and indexes on node ids and common lookups are created by the migrations.
 - A write batch runs in one Memgraph transaction, so it is atomic.
 - Concurrent access from several processes is handled by the server. When two transactions conflict, the adapter retries a bounded number of times, then reports `Conflict`. The shared index lock (`.workbench/run/index.lock`, a file lock) still keeps indexing runs from interleaving.
-- Search: annotation and code search use a case-insensitive contains-scan with a result limit (Assumption 6).
+- Search: annotation and code search use a case-insensitive contains-scan with a result limit (Decision 12).
 
 ### Migrations
 
@@ -112,7 +109,7 @@ Opening storage is part of the start-up of both MCP modes (`SPEC-core.md`, "buil
 **The query schema.** The node labels, relationship types and property names an agent queries are a documented, versioned surface. `SPEC-graph.md` defines its content. `graph_schema` returns that schema (kinds, properties, relationship types) with a few example Cypher queries and the schema version, so an agent knows what it may write.
 
 **Read-only.**
-1. **The guard.** Before a query reaches Memgraph it is tokenised (so strings and comments cannot hide a write). Only read clauses are allowed (`MATCH`, `OPTIONAL MATCH`, `WHERE`, `WITH`, `RETURN`, `UNWIND`, `ORDER BY`, `SKIP`, `LIMIT`) and a list of safe functions. Everything else is rejected, including `CREATE`, `MERGE`, `SET`, `DELETE`, `REMOVE`, `DROP`, `FOREACH`, `LOAD CSV`, procedure calls (`CALL`) and more than one statement. The guard is what enforces read-only (Assumption 9).
+1. **The guard.** Before a query reaches Memgraph it is tokenised (so strings and comments cannot hide a write). Only read clauses are allowed (`MATCH`, `OPTIONAL MATCH`, `WHERE`, `WITH`, `RETURN`, `UNWIND`, `ORDER BY`, `SKIP`, `LIMIT`) and a list of safe functions. Everything else is rejected, including `CREATE`, `MERGE`, `SET`, `DELETE`, `REMOVE`, `DROP`, `FOREACH`, `LOAD CSV`, procedure calls (`CALL`) and more than one statement. The guard is what enforces read-only (Decision 15).
 2. **A read-mode transaction.** The query runs in a read-mode transaction as a second layer.
 3. **Limits.** A row limit (200 by default, 5 000 at most), a time limit (10 seconds by default) and a limit on the size of the result.
 
