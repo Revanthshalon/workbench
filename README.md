@@ -38,6 +38,16 @@ Hexagonal (ports and adapters):
 - `services/*` parse their own input (clap, MCP) and call the engine.
 - Driven adapters (filesystem, later k8s, databases, logs) live in the service that uses them and implement the engine's ports.
 
+## Storage
+
+Workbench keeps the code graph and its semantic annotations in **Memgraph**, running on your own machine. Workbench does not install, start or stop it, and the default mode (`developer-support`) will not start until Memgraph answers. For example:
+
+```sh
+docker run -p 7687:7687 memgraph/memgraph
+```
+
+The host, port and `namespace` are in the `storage` block of `.workbench/config.yml`, which `workbench init` writes with `host: localhost`, `port: 7687` and a namespace unique to the workspace (it keeps workspaces apart on one Memgraph). The annotations people write are also kept in `.workbench/memory/<project>/annotations.yml`, so they can be replayed if Memgraph is rebuilt. `workbench storage status` shows where Memgraph is and whether it answers. Each view (the projects' working trees, and each context's branches) is its own graph, and within a view a query can follow relationships from one project into another. Agents query it with one tool, `graph_query`, which takes read-only Cypher anchored to the workspace and the session's view.
+
 ## Development
 
 Requires Rust 1.99.1+ (edition 2024; see `rust-toolchain.toml`).

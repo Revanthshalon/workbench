@@ -7,7 +7,7 @@ Depends on [`workspace`](SPEC-workspace.md) (approved) and, for the `mcp` comman
 ## Decisions
 
 1. The binary is `workbench` (package `workbench`, in `services/cli`).
-2. This module defines the whole `workbench` command surface for managing a workspace: `init`, `project add | list | remove`, `index`, `watch`, `context check | sync` and `semantic add | revise | retract | list | show | prune | generate`. What indexing and annotations *do* is specified elsewhere (`SPEC-index.md`, `SPEC-graph.md`, `SPEC-semantic-layer.md`); this spec fixes how they are invoked, scoped and reported. The `mcp` command group (`start`, `serve`, `stop`, `restart`, `status`, `logs`, `connect`) is listed here and specified in `SPEC-core.md`; the MCP server has no executable of its own. `workbench lsp run` (`SPEC-lsp.md`) and `workbench platform setup` (`SPEC-platform-setup.md`) have their own specs. Platform setup is its own command; `init` does not take `--platform`.
+2. This module defines the whole `workbench` command surface for managing a workspace: `init`, `project add | list | remove`, `index`, `watch`, `storage status`, `context check | sync` and `semantic add | revise | retract | list | show | prune | generate`. What indexing and annotations *do* is specified elsewhere (`SPEC-index.md`, `SPEC-graph.md`, `SPEC-semantic-layer.md`); this spec fixes how they are invoked, scoped and reported. The `mcp` command group (`start`, `serve`, `stop`, `restart`, `status`, `logs`, `connect`) is listed here and specified in `SPEC-core.md`; the MCP server has no executable of its own. `workbench lsp run` (`SPEC-lsp.md`) and `workbench platform setup` (`SPEC-platform-setup.md`) have their own specs. Platform setup is its own command; `init` does not take `--platform`.
 3. The CLI is a *driving adapter*: it parses arguments, calls engine use cases, and prints results. Rules live in the engine; file access lives in `lib/adapters`.
 4. `.workbench/` is entirely git-ignored; `init` adds it to the workspace root's `.gitignore`.
 5. `init` also generates the server config template at `.workbench/mcp/config.yml` and one context config template per default context at `.workbench/mcp/contexts/<name>.yml` (`production`, `staging`, `testing`). Its schema is defined in `SPEC-core.md`, so that step is built after `core`'s model exists.
@@ -19,7 +19,7 @@ Depends on [`workspace`](SPEC-workspace.md) (approved) and, for the `mcp` comman
 3. `project add` detects language and dependency manager from files in the project, and asks for flags when it cannot decide.
 4. `project remove` removes the project from the config and keeps its memory folder, because the folder may contain notes written by a person.
 5. Output is plain text for people. There is no `--json` yet.
-6. Commands that act on a node select it with separate flags: `--project <ID>` (the whole project), plus `--file <PATH>` (a file, relative to the project root; needs `--project`), plus `--symbol <NAME>` (a class or function by qualified name, such as `StripeGateway.charge`; needs `--file`). The target of a `link` uses `--to-project`, `--to-file` and `--to-symbol` the same way.
+6. Commands that act on a node select it with separate flags: `--project <ID>` (the whole project), plus `--file <PATH>` (a file, relative to the project root; needs `--project`), plus `--symbol <NAME>` (a class or function by qualified name, such as `StripeGateway.charge`; needs `--file`). The target of a `link` uses `--to-project`, `--to-file` and `--to-symbol` the same way, or names a custom node with `--to-custom <NAME>` (lowercase letters, digits and `.`, `_`, `:`, `-`; starts with a letter or digit; at most 64 characters, for example `kafka:orders` or `shared-postgres`). The first link to a custom name creates that node in each graph the link names; later links reuse it. A custom node stands for something no project's code defines (a shared database, a queue, a third-party API) and exists in a view only while a link there points at it.
 7. Annotation kinds are `purpose`, `role`, `domain-term`, `tag` and `link`; `SPEC-semantic-layer.md` defines them precisely.
 8. LLM-assisted annotation is opt-in twice over: the workspace config must contain `semantic.llm` (`SPEC-workspace.md`), **and** the command must be given the flag. The supported providers are `copilot-cli`, `ollama` and `claude`. Only `claude` needs an API key; it is read from the environment variable named in `api_key_env`, only when a call is made, and is never stored in any config file.
 
@@ -49,7 +49,8 @@ Creates, under `<DIR>` (default `.`):
 
 | Created | Content |
 |---|---|
-| `.workbench/config.yml` | `version: 1`, `projects: []` (the format in `SPEC-workspace.md`) |
+| `.workbench/config.yml` | `version: 1`, a `storage` block (`host: localhost`, `port: 7687` and a unique `namespace`) and `projects: []` (the format in `SPEC-workspace.md`) |
+| `.workbench/memory/INIT-MEMORY.md` | An empty workspace-level context template for how the projects connect (`SPEC-workspace.md`) |
 | `.workbench/mcp/config.yml` | The server config template (`SPEC-core.md`); added once `core` defines it |
 | `.workbench/mcp/contexts/<name>.yml` | One context config template per default context (`production`, `staging`, `testing`); content owned by `SPEC-contexts.md` |
 | `<DIR>/.gitignore` | A `.workbench/` line appended; the file is created if missing; nothing is added twice |
@@ -73,13 +74,14 @@ Also defined in `SPEC-platform-setup.md`. A separate command, run only when aske
 | `--dependency-manager <poetry\|uv\|npm\|pnpm\|yarn\|bun>` | Default: detected. |
 | `--venv <PATH>` | Python only. Default: `.venv` if it exists in the project. |
 | `--activate <COMMAND>` | Command prefix to launch tools in the project. Default: derived from the dependency manager (`uv run`, `poetry run`), none for Angular. |
+| `--compose <PATH>` | The project's Docker Compose file, relative to the project. Default: the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` at the project root, if any. |
 | `--index` | Index the new project right after adding it (same as running `workbench index --project <id>`). A failed index does not undo the add. |
 
 Steps, all or nothing:
 1. Resolve and validate the path (exists, is a directory).
 2. Detect language and dependency manager, unless given.
 3. Build the project and validate it against the workspace rules (unique id, valid pair, and so on).
-4. Create `.workbench/memory/<id>/INIT-MEMORY.md`, seeded as in `SPEC-workspace.md`.
+4. Create `.workbench/memory/<id>/INIT-MEMORY.md`, seeded as in `SPEC-workspace.md`, and an empty `annotations.yml` beside it.
 5. Save the config.
 
 If any step fails, the config and the memory folder are left as they were.
@@ -102,7 +104,7 @@ Prints one line per project: id, language, dependency manager, path. Prints a sh
 
 ### `workbench project remove <ID>`
 
-Removes the project from the config. Keeps `.workbench/memory/<id>/`. `--purge-memory` deletes that folder too, after printing what it will delete. An unknown id fails and lists the known ids.
+Removes the project from the config. Keeps `.workbench/memory/<id>/` (`INIT-MEMORY.md` and `annotations.yml`, so re-adding the project finds both). It does not touch the storage: the project's indexed data is removed by the next `workbench index` that covers every project (`SPEC-index.md`). `--purge-memory` deletes that folder too, after printing what it will delete. An unknown id fails and lists the known ids.
 
 ### `workbench index [options]`
 
@@ -117,7 +119,7 @@ Builds the AST data for the projects in the workspace and keeps it up to date. I
 
 - Prints progress to stderr and a summary to stdout, per project: files parsed, unchanged, removed, nodes re-linked, parse failures, and the number of annotations that became stale.
 - Fails with a hint when the workspace has no projects.
-- It reads project files and writes only to the storage backend (configured in the workspace config's `storage` block); it never changes a project's files.
+- It reads project files and writes only to Memgraph (configured in the workspace config's `storage` block); it never changes a project's files.
 - The MCP `reindex` tool runs the same use case, so both produce the same result.
 - Exit codes follow "Common behaviour"; how partial failures (some files fail to parse) are counted is defined in `SPEC-index.md`.
 
@@ -135,10 +137,18 @@ Keeps the index fresh while code changes, including edits made by AI tools. The 
 
 - **Process model:** a thread cannot outlive the CLI command, so `watch` starts a detached background process, managed the way `workbench mcp start` is (pid file and a control socket in `.workbench/run/`, directory `0700`, socket `0600`); the watching runs on a thread inside it.
 - **What it watches:** the paths of the workspace's projects, ignoring `.workbench/`, `.git/`, anything a project's `.gitignore` excludes, and the usual dependency and build folders (`node_modules`, `.venv`, `target`, `dist`, `__pycache__`). Changes are batched with a short delay (500 ms by default) so a burst of edits is indexed once.
-- **Needs:** the workspace config and the storage backend only. No server config, no secrets, so it works with `developer-support`.
+- **Needs:** the workspace config and Memgraph only. No server config, no secrets, so it works with `developer-support`.
 - **Never:** it never calls an LLM and never changes a project's files. It shares one lock with `workbench index` and the MCP `reindex` tool, so only one indexing run writes at a time; the others wait.
 - **Log:** `.workbench/logs/watch-<YYYYMMDD-HHMMSS>.log`, one file per start, owner-only, never containing a secret.
 - **AI platform hooks:** hooks that run `workbench watch` at session start, `workbench watch flush` after an edit and `workbench watch stop` at session end are installed only on request, by `workbench platform hooks install` (formats per platform in `SPEC-platform-setup.md`). `workbench platform setup` never installs hooks. Platforms without hooks can run the commands by hand.
+
+### `workbench storage status`
+
+A read-only check of the storage (`SPEC-storage.md`). It prints where Memgraph is (`host:port` and the namespace), whether it answers and how fast, each module's schema version, and per view (the project working trees and each context) the counts of indexed files, nodes, edges and annotations.
+
+- It needs only the workspace config, so it works with `developer-support`.
+- It changes nothing and applies no migrations; if the database is newer than this `workbench` it says so.
+- When Memgraph cannot be reached it exits `1` and names its host and port, with the hint to start Memgraph (for example `docker run -p 7687:7687 memgraph/memgraph`), and with no secret in the message.
 
 ### `workbench semantic <command>`
 
@@ -146,17 +156,17 @@ Adds meaning to the indexed AST. Commands that act on a node select it with the 
 
 | Command | Meaning |
 |---|---|
-| `add --project <ID> [--file <PATH> [--symbol <NAME>]] --kind <KIND> --text <TEXT> [--to-project <ID> [--to-file <PATH> [--to-symbol <NAME>]]]` | Attach an annotation. The `--to-*` flags are required for `--kind link` and rejected otherwise. |
+| `add --project <ID> [--file <PATH> [--symbol <NAME>]] --kind <KIND> --text <TEXT> [--to-project <ID> [--to-file <PATH> [--to-symbol <NAME>]] \| --to-custom <NAME>] [--context <NAME>]...` | Attach an annotation. For `--kind link`, `--context` is required (repeatable; `working`, `production`, `staging` or `testing`) and says which graphs the link belongs to; it is rejected for other kinds. For `--kind link`, exactly one target is required: a node (`--to-project`, optionally with `--to-file` and `--to-symbol`) or a **custom node** (`--to-custom`); the `--to-*` flags are rejected for other kinds. |
 | `revise <ID> [--text <TEXT>]` | Replace the text of an annotation. Without `--text`, confirm that the annotation still holds and re-anchor it to the node's current version, which clears its stale flag. |
 | `retract <ID>` | Remove one annotation. |
 | `prune [--project <ID>] [--stale] [--orphaned] [--dry-run] [--yes]` | Remove stale annotations (their node changed) and orphaned entries (their node disappeared, kept as a tombstone so the annotation stayed visible). With neither `--stale` nor `--orphaned`, both. Lists what it will remove and asks to confirm; `--yes` skips the question, and is required when not run in a terminal. `--dry-run` only lists. |
 | `generate [--project <ID> [--file <PATH> [--symbol <NAME>]]] [--max-nodes <N>] [--dry-run]` | Ask the configured LLM to draft annotations for nodes that have none. Needs `semantic.llm` in the workspace config. Off unless this command (or `index --annotate`) is run. `--dry-run` prints how many nodes and roughly how much text would be sent, and makes no call. |
-| `list [--project <ID> [--file <PATH> [--symbol <NAME>]]] [--kind <KIND>] [--stale] [--orphaned]` | List annotations, optionally only stale or orphaned ones. |
-| `show --project <ID> [--file <PATH> [--symbol <NAME>]]` | Show a node with its annotations, its neighbours in the graph, and whether each annotation is current or stale. |
+| `list [--project <ID> [--file <PATH> [--symbol <NAME>]]] [--kind <KIND>] [--context <NAME>] [--stale] [--orphaned]` | List annotations, optionally only stale or orphaned ones. |
+| `show --project <ID> [--file <PATH> [--symbol <NAME>]]` | Show a node with its annotations, its neighbours in the graph (including linked custom nodes), and whether each annotation is current or stale. |
 
-- The target must exist in the index. If not, the command fails and suggests `workbench index`.
+- The target must exist in the index of each context the link names (`working` is the projects' working trees; a context needs `workbench context sync` first), except a custom node, which is created by its first link. If a project, file or symbol is not indexed there, the command fails and suggests `workbench index` or `workbench context sync`.
 - Annotations created here are recorded as written by a person. An agent cannot overwrite or remove them.
-- Annotations are stored in the storage backend through the `semantic-layer`. Those written by a person (`add`, `revise`, `retract`, `prune`) are also mirrored to `.workbench/memory/<project-id>/annotations.yml`, so they survive if the backend is wiped; agent-written ones are not mirrored. Nothing is written into the project's source files.
+- Annotations are stored in Memgraph through the `semantic-layer`. Those written by a person (`add`, `revise`, `retract`, `prune`) are also mirrored to `.workbench/memory/<project-id>/annotations.yml`, so `workbench index` can replay them if Memgraph is wiped or rebuilt; agent-written ones are not mirrored. Nothing is written into the project's source files.
 - **LLM drafting** (`generate`, `index --annotate`):
   - Fails before any call if `semantic.llm` is missing, if `claude` is chosen and its environment variable is unset, if `copilot-cli` is chosen and the `copilot` program cannot be found, or if `ollama` is chosen and its endpoint cannot be reached; the error says which.
   - Sends only the source of indexed nodes (signature, body and nearby context, defined in `SPEC-semantic-layer.md`), never other files.
@@ -280,7 +290,7 @@ Follow the existing conventions: doc comments on every public item, no `unwrap` 
 
 ## Testing Strategy
 
-- **Engine unit tests** with fake ports: `add_project` rolls back on failure, a duplicate id is rejected, `remove_project` keeps memory by default, `init` is refused when a config exists.
+- **Engine unit tests** with fake ports: `add_project` rolls back on failure, a duplicate id is rejected, `remove_project` keeps memory by default, `init` is refused when a config exists, and the config it writes holds the `storage` block (`localhost`, `7687`, a unique namespace).
 - **Adapter tests** (in `lib/adapters`): detection against fixture directories (uv, poetry, angular with each lock file, ambiguous, empty); `.gitignore` handling (missing file, existing entry, existing file without a trailing newline).
 - **Integration tests** (`services/cli/tests/cli.rs`): run the real binary in a temp directory through the sequence `init`, `project add`, `list`, `remove`, and check the files and exit codes.
 - **LLM drafting and prune:** with a fake `LlmClient` port: no call is made without the flag, without `semantic.llm`, or with `--dry-run`; the missing-variable error names the variable; a person-written annotation is never overwritten; `prune --dry-run` removes nothing; `prune` without `--yes` asks first and refuses to run non-interactively; `prune` removes exactly the stale and orphaned entries it listed.
@@ -298,19 +308,20 @@ Follow the existing conventions: doc comments on every public item, no `unwrap` 
 ## Success Criteria
 
 1. `workbench init` creates `.workbench/config.yml` and a `.gitignore` entry, and a second run fails with no changes.
-2. `project add` on a uv project, a poetry project and an Angular project (each package manager) detects correctly and creates the memory folder.
+2. `project add` on a uv project, a poetry project and an Angular project (each package manager) detects correctly and creates the memory folder with `INIT-MEMORY.md` and an empty `annotations.yml`.
 3. An ambiguous or undetectable project fails and names the flag to pass.
 4. A failure in any step of `project add` leaves the config and memory unchanged.
 5. `project list` and `project remove` behave as described, and `remove` keeps the memory folder unless `--purge-memory` is given.
 6. From a subdirectory, commands find the workspace; outside one they print the `no .workbench/ found` error.
 7. `workbench index` indexes all projects or the chosen ones, a second run parses nothing that has not changed, `--full` re-parses everything, and an unknown project fails with the list of known ids.
-8. `workbench semantic add` attaches an annotation to an indexed node; `list --stale` shows annotations whose node changed after the next `index`; `retract` removes one; a target that is not indexed fails with a hint. A person-written annotation also appears in `.workbench/memory/<id>/annotations.yml`; an agent-written one does not.
+8. `workbench semantic add` attaches an annotation to an indexed node; `list --stale` shows annotations whose node changed after the next `index`; `retract` removes one; a target that is not indexed fails with a hint. A person-written annotation also appears in `.workbench/memory/<id>/annotations.yml`, from where `workbench index` replays it into an emptied storage; an agent-written one does not.
 9. `workbench semantic prune` lists and then removes exactly the stale and orphaned entries in scope, does nothing under `--dry-run`, and refuses to run non-interactively without `--yes`.
 10. `workbench semantic generate` and `index --annotate` call the LLM only when both the flag and `semantic.llm` are present, record their output as agent-written, and never touch a person-written annotation; `--dry-run` makes no call.
 11. `workbench context check` prints one line per configured system with its status, checks only the named context, exits `1` when any check fails, never prints a secret, and fails clearly when the server config or the context file is missing or still holds placeholders.
 12. `workbench watch` starts one background watcher (a second call says so and exits `0`), re-indexes edited files within the batch delay, ignores the paths listed above, and `watch stop`, `status`, `logs` and `flush` behave as described; `flush` leaves the index current when it returns, with or without a running watcher; the watcher makes no LLM call and changes no project file.
 13. `workbench context sync` creates or moves one worktree per project at the context's branch and indexes it, leaves each project's own working tree, current branch and refs unchanged, and contacts a remote only with `--fetch`; `context check` reports the result on its `code` line and fails with the exact command when a worktree is missing or behind.
-14. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass.
+14. `workbench storage status` prints host, port, namespace, answer time, schema versions and per-view counts, changes nothing, and exits `1` naming the host and port when Memgraph cannot be reached.
+15. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass.
 
 ## Roadmap (not in this spec)
 

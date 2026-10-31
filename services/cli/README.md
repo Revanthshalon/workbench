@@ -19,6 +19,8 @@ Creates `<DIR>/.workbench/config.yml`, empty for now. It refuses to overwrite an
 workbench init --platform copilot-cli,claude-code --out ~/work/my-service
 ```
 
+Storage: Workbench keeps its graph in Memgraph; `workbench storage status` checks it. See the [root README](../../README.md#storage).
+
 ## Structure
 
 | Path | Role |
@@ -56,13 +58,13 @@ AI platforms are configured to run `workbench mcp connect`, a stdio shim that re
 
 ### MCP surface: `developer-support` (planned)
 
-A project's context (`project_context`: its `INIT-MEMORY.md`, the graph and the annotations), the graph and code tools (`service_map` with `focus=…` for blast radius, `contract`, `find_symbol`, `code_context`, `trace_flow`, `read_file`, `graph_query`, `callers`, `callees`, `dependents`, `test_map`, `changed_symbols`, `reindex`), the semantic layer (`remember`, `revise`, `retract`, `recall`, `knowledge_gaps`, `search_code`), the LSP tools, `edit` tools that change code inside your projects (`apply_patch`, `create_file`, `rename_symbol`, `apply_code_action`), and prompts for changing code (`explain_code`, `plan_change`, `assess_impact`, `implement_change`, `review_change` and more). The full working list is in `docs/spec/capability-map.md`. No secrets and no production access. Keep the index fresh with `workbench watch` and `workbench watch stop`; to have your AI platform run them for you, install its hooks with `workbench platform hooks install`.
+A project's context (`project_context`: its `INIT-MEMORY.md`, the graph and the annotations), the graph and code tools (`service_map` with `focus=…` for blast radius, `contract`, `find_symbol`, `code_context`, `trace_flow`, `read_file`, `graph_query` (Cypher), `graph_schema`, `callers`, `callees`, `dependents`, `test_map`, `changed_symbols`, `reindex`), the semantic layer (`remember`, `revise`, `retract`, `recall`, `knowledge_gaps`, `search_code`), the LSP tools, `edit` tools that change code inside your projects (`apply_patch`, `create_file`, `rename_symbol`, `apply_code_action`), and prompts for changing code (`explain_code`, `plan_change`, `assess_impact`, `implement_change`, `review_change` and more). The full working list is in `docs/spec/capability-map.md`. No secrets and no production access. Keep the index fresh with `workbench watch` and `workbench watch stop`; to have your AI platform run them for you, install its hooks with `workbench platform hooks install`.
 
 ### MCP surface: `operational-support` (planned)
 
 | Group | Tools |
 |-------|-------|
-| Graph and code | `service_map` (boundaries with evidence), `contract`, `find_symbol`, `code_context`, `trace_flow`, `read_file`, `graph_query` (read-only), `lsp` |
+| Graph and code | `service_map` (boundaries with evidence), `contract`, `find_symbol`, `code_context`, `trace_flow`, `read_file`, `graph_query` (read-only Cypher), `graph_schema`, `lsp` |
 | Operations | `fetch_logs`, `match_log`, `analyze_logs`, `compose_status`, `k8s_status`, `service_config`, `check_config` |
 | Data | `db_query`, `db_schema`, `redis_command`, `datastore_health` |
 | Semantic layer | `remember`, `revise`, `retract`, `recall`, `knowledge_gaps`, `search_code` |
