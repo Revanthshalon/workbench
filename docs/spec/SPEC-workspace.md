@@ -14,6 +14,7 @@ Module `workspace` from the [capability map](capability-map.md). Status: **appro
 8. *(Amendment)* The config can hold the settings for LLM-assisted semantic annotation, under `semantic.llm`. The supported providers are `copilot-cli`, `ollama` and `claude`. The settings are not secrets: provider, model, optional endpoint and, for `claude`, the *name* of the environment variable that holds the API key. The key itself is never stored in the config, not even inline.
 9. *(Amendment, from `SPEC-core.md`)* The config also holds the storage settings, under `storage`, because `developer-support` and the CLI need storage without the server config. Workbench has one storage, Memgraph, running on the person's own machine. Its password is referenced by environment variable name, never stored. The meaning of each setting is defined in `SPEC-storage.md`. Every field is optional and has a default; `workbench init` writes the block out in full so the settings are visible.
 10. *(Amendment, from `SPEC-storage.md`)* Docker Compose files feed the overview of how projects connect (in each view, from that checkout's own files). They normally live inside each project, so a project can name its Compose file; a Compose file that spans projects (for example one at the repository root) is listed at the top level of the config. The workspace also has its own `INIT-MEMORY.md`, where a person writes down how the services fit together; it is read as context and is not parsed into links.
+11. *(Readiness fixes)* Loading checks **structure only**; whether a project's `path` exists is checked by the commands that read the project (`index`, `watch`, `lsp`, `mcp`), so `project list` and `project remove` still work when a directory has moved or been deleted. Unknown keys in `config.yml` are rejected. "Loads and saves unchanged" means the *model* is equal after a round trip: comments and key order are not kept, and defaults are not written back for fields that were absent.
 
 ## Objective
 
@@ -75,25 +76,26 @@ projects:
 
 | Field | Rule |
 |---|---|
-| `id` | Required. Lowercase letters, digits and `-`; starts with a letter; 1 to 64 characters; unique. Never changes once the memory folder exists. |
-| `path` | Required. Relative to the workspace root, or absolute; need not be under the root. Must exist and be a directory when the config is loaded for use. |
+| `id` | Required. Lowercase letters, digits and `-`; starts with a letter; 1 to 64 characters; unique. Never changes once the memory folder exists. A default id derived from a directory name (used by `project add`) is lowercased, every other character becomes `-`, runs of `-` collapse, leading and trailing `-` are trimmed, and it is cut to 64 characters; if the result does not start with a letter it is invalid and the caller fails with a hint to pass an id. |
+| `version` | Required. Must be `1`; any other value is an error that names the supported version. |
+| `path` | Required. Relative to the workspace root, or absolute; need not be under the root. Two projects may not have the same path once resolved (nesting is allowed). Not checked for existence on load; a command that reads the project fails naming the project and path if it is not a directory. |
 | `language` | Required. `python` or `angular`. |
 | `dependency_manager` | Required. `poetry` or `uv` for Python; `npm`, `pnpm`, `yarn` or `bun` for Angular (Vite is the build tool, not recorded here). A mismatched pair is an error. |
-| `environment.venv` | Optional, Python only. Relative to the project path. |
+| `environment.venv` | Optional, Python only (an error on an Angular project). Relative to the project path. |
 | `environment.activate` | Optional. A command prefix used to launch tools in the project (for example `uv run` or `poetry run`), including the project's language server. |
 | `compose` (project) | Optional. A path relative to the project, or absolute. If absent, the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` at the project root is used, and having none is fine. A listed path that does not exist is an error. |
-| top-level `compose[].path` | Optional list of Compose files that span projects. Relative to the workspace root, or absolute. Must exist. |
+| top-level `compose[].path` | Optional list of Compose files that span projects. Relative to the workspace root, or absolute. Must exist when a command reads it (not on load). Listing the same path twice is an error. |
 | top-level `compose[].services` | Optional map from a Compose service name to a project id, for services whose build context cannot be matched to a project (for example image-only services). Unknown project ids are rejected. |
 | `lsp.enabled` | Optional, default `true`. `false` turns the language server off for this project. |
 | `lsp.server` | Optional. The server name. Syntax is checked here; the name is checked against the catalog by the `lsp` module. |
 | `lsp.command` | Optional. Overrides the catalog's launch command (program and arguments). It runs through `environment.activate` when that is set. |
 | `lsp.settings` | Optional. A free-form map passed to the server unchanged; the workspace does not interpret it. |
-| top-level `lsp.<language>` | Optional. The same fields (`enabled`, `server`, `command`, `settings`) as workspace-wide defaults for every project of that language. |
-| `storage.host` | Optional, default `localhost`. Memgraph runs on the person's own machine; a shared server is not supported. |
-| `storage.port` | Optional, default `7687`. |
+| top-level `lsp.<language>` | Optional. The same fields (`enabled`, `server`, `command`, `settings`) as workspace-wide defaults for every project of that language. The key is `python` or `angular` (the project languages); any other key is an error until `SPEC-lsp.md` says otherwise. |
+| `storage.host` | Optional, default `localhost`. Non-empty, no whitespace. Memgraph runs on the person's own machine; a shared server is not supported. |
+| `storage.port` | Optional, default `7687`. 1 to 65535. |
 | `storage.username` | Optional. Memgraph has no login unless one is set up. |
-| `storage.password_env` | Optional. The name of an environment variable; the value is held as a `secrecy` secret and read only when a connection is opened. |
-| `storage.namespace` | Optional. **The namespace identifies the workspace in the database: one per workspace, unique on a given Memgraph.** It keeps this workspace's data apart from other workspaces on the same local Memgraph. `workbench init` writes a unique one (the folder name plus four random hexadecimal characters); when absent it is `default`, which is only safe for a single workspace. |
+| `storage.password_env` | Optional. The name of an environment variable (`[A-Za-z_][A-Za-z0-9_]*`, same for `semantic.llm.api_key_env`); the value is read and held as a `secrecy` secret by the storage adapter when a connection is opened, never by this module. |
+| `storage.namespace` | Optional. Lowercase letters, digits and `-`; starts with a letter or digit; 1 to 64 characters. **The namespace identifies the workspace in the database: one per workspace, unique on a given Memgraph.** It keeps this workspace's data apart from other workspaces on the same local Memgraph. `workbench init` writes a unique one: the folder name (lowercased, other characters becoming `-`, runs collapsed, ends trimmed, cut to 59 characters, `workspace` if nothing is left) plus `-` and four random hexadecimal characters; when absent it is `default`, which is only safe for a single workspace. |
 | `semantic.llm.provider` | Required when `semantic.llm` is present. One of `copilot-cli`, `ollama`, `claude`. |
 | `semantic.llm.model` | Required for `claude` and `ollama`; optional for `copilot-cli`, which uses its own default. |
 | `semantic.llm.endpoint` | Optional, `ollama` and `claude` only. For `ollama` the default is `http://localhost:11434`. |
@@ -111,7 +113,7 @@ Every module that queries projects takes a scope: all projects (the default) or 
 
 - The folder, `INIT-MEMORY.md` and an empty `annotations.yml` are created when a project is added (also by the CLI's `project add`); an existing `INIT-MEMORY.md` or `annotations.yml` is **never overwritten**.
 - The content is seeded from context the project already has: `README.md`, `CLAUDE.md` and `AGENTS.md` at the project root, whichever exist. If none exist, it is an empty template.
-- The seed is a template with fixed headings (Purpose, Architecture, How to run, Conventions, Gotchas) followed by an "Existing context" section that quotes each source file under its name, each capped at 20 KB.
+- The seed is a template with fixed headings (Purpose, Architecture, How to run, Conventions, Gotchas) followed by an "Existing context" section that quotes each source file under its name, each capped at 20 KB (a longer file is cut there and followed by the line `[truncated at 20 KB]`; a file that is not valid UTF-8 is skipped).
 - People edit this file. The engine never rewrites it after creation.
 - The same folder also holds `annotations.yml`, the mirror of annotations written by people. It is created empty here and kept up to date by `semantic-layer` (`SPEC-semantic-layer.md`). When the storage has lost annotations (a wiped or rebuilt Memgraph), `workbench index` replays them from this file, so a person's customisations are kept when the AST is parsed again and when an LLM drafts annotations.
 
@@ -124,7 +126,7 @@ Every module that queries projects takes a scope: all projects (the default) or 
 - Rust 2024, workspace at `Cargo.toml`.
 - `serde` and `yaml_serde` (already workspace dependencies) for the config file.
 - `thiserror` for errors (already used).
-- No new dependencies are needed for the model. A temp-directory crate for adapter tests is an ask-first item (see Boundaries).
+- No new dependencies are needed for the model. A temp-directory crate for adapter tests is an ask-first item (see Boundaries). `secrecy` is used by the storage adapter, not here: this module holds only environment variable names.
 - New workspace member `lib/adapters` (package `adapters`), depending on `engine`, `serde` and `yaml_serde`; `services/cli` (the `workbench` binary, which includes the MCP server) depends on it.
 
 ## Commands
@@ -148,7 +150,7 @@ lib/engine/src/
 │   ├── config.rs       # WorkspaceConfig (version, projects) and its validation
 │   ├── scope.rs        # ProjectScope and resolution
 │   └── memory.rs       # memory layout, INIT-MEMORY template and seeding rules
-└── ports.rs            # + WorkspaceStore, MemoryStore, ContextSource
+└── ports.rs            # + WorkspaceStore, MemoryStore, ContextSource, IdSource
 
 lib/adapters/src/        # shared driven adapters (new crate)
 ├── lib.rs
@@ -164,8 +166,9 @@ The engine has no I/O. `services/cli` (the CLI and the MCP server) picks adapter
 | Port | Responsibility |
 |---|---|
 | `WorkspaceStore` | `load()` returns a validated `WorkspaceConfig`; `save(&config)`; `create_empty()` |
-| `MemoryStore` | `create(project_id, seed)` creates the folder, `INIT-MEMORY.md` and an empty `annotations.yml` if absent, never overwrites; `create_workspace()` does the same for the workspace-level file |
+| `MemoryStore` | `create(project_id, seed)` creates the folder, `INIT-MEMORY.md` and an empty `annotations.yml` if absent, never overwrites, and returns the paths it created; `create_workspace()` does the same for the workspace-level file; `discard(created)` removes exactly those paths (used by `project add` to roll back); `remove(project_id)` deletes the project's whole folder (used only by `project remove --purge-memory`) |
 | `ContextSource` | `read(project_path)` returns the seed files that exist, each capped at 20 KB |
+| `IdSource` | `suffix()` returns four random hexadecimal characters; the engine has no I/O, so `init` takes this port to build the namespace and tests inject a fixed one |
 
 ## Code Style
 
@@ -196,16 +199,19 @@ Conventions follow the existing code: one error enum in `error.rs`, doc comments
 - **Engine unit tests** (next to the code, with fake stores like the existing `init` test):
   - LSP precedence: project over workspace default, a partial override keeps the other fields, `enabled: false` is respected.
   - `ProjectId` accepts and rejects the right strings.
-  - Duplicate ids, mismatched language and dependency manager, and an unknown version are rejected.
+  - Duplicate ids, mismatched language and dependency manager, an unknown version, an unknown key, duplicate resolved paths, a duplicate top-level Compose path, `venv` on an Angular project, a bad port, a bad namespace and a bad environment variable name are rejected.
+  - A config whose project `path` does not exist still loads, and `list` and `remove` work on it.
+  - Default id derivation: `Billing_API` gives `billing-api`; `3d-viewer` and `___` are invalid with a hint; a long name is cut to 64 characters.
   - Scope resolution: all, a subset, an unknown id.
   - Memory seed: sources found, none found, oversized source is capped.
-  - `init` content: the `storage` block has `host: localhost`, `port: 7687` and a namespace of the folder name plus four hexadecimal characters; two inits give two different namespaces.
+  - `init` content: the `storage` block has `host: localhost`, `port: 7687` and a namespace of the folder name plus four hexadecimal characters from `IdSource`; two different suffixes give two different namespaces; a folder name with spaces, capitals or Unicode still gives a valid namespace.
+  - `MemoryStore`: `discard` removes only what `create` returned, and `remove` deletes the folder.
 - **Adapter tests** (in `lib/adapters`): YAML round-trip; a config with a missing `path` fails with a clear error; `MemoryStore` creates an empty `annotations.yml` with `INIT-MEMORY.md` and leaves existing copies of both untouched.
 - Coverage target: every rule in the "Project rules" table has a test.
 
 ## Boundaries
 
-- **Always:** validate on load and on save; resolve relative paths against the workspace root and accept absolute ones; return errors that name the project id and the field.
+- **Always:** validate structure on load and on save (existence of project paths is checked only by commands that use them); resolve relative paths against the workspace root and accept absolute ones; return errors that name the project id and the field.
 - **Ask first:**
   - Adding a dependency (for example a temp-directory crate for adapter tests).
   - Changing the config's `version` or removing a field.
@@ -214,7 +220,7 @@ Conventions follow the existing code: one error enum in `error.rs`, doc comments
 ## Success Criteria
 
 1. `workbench init` writes a `config.yml` that loads back as an empty, valid workspace (`version: 1`, a `storage` block, no projects) and an empty workspace-level `.workbench/memory/INIT-MEMORY.md`.
-2. A config with two valid projects, including `lsp` blocks, `compose` entries, a `storage` block and a `semantic.llm` block, loads, validates and saves unchanged.
+2. A config with two valid projects, including `lsp` blocks, `compose` entries, a `storage` block and a `semantic.llm` block, loads, validates and saves with an equal model (comments, key order and absent defaults are not preserved).
 3. Each rule in the "Project rules" table is rejected with an error that names the project and field when broken.
 4. Adding a project creates `.workbench/memory/<id>/INIT-MEMORY.md`, seeded from existing context, and an empty `annotations.yml`, and a second add never overwrites either.
 5. The effective LSP settings of a project resolve by the precedence rule (project over workspace default over catalog), field by field.

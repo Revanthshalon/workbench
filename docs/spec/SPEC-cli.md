@@ -71,7 +71,7 @@ Also defined in `SPEC-platform-setup.md`. A separate command, run only when aske
 
 | Option | Meaning |
 |---|---|
-| `--id <ID>` | Project id. Default: the directory name as kebab-case. |
+| `--id <ID>` | Project id. Default: derived from the directory name by the rule in `SPEC-workspace.md`; if the result is not a valid id (for example `3d-viewer`), the command fails and names `--id`. |
 | `--language <python\|angular>` | Default: detected. |
 | `--dependency-manager <poetry\|uv\|npm\|pnpm\|yarn\|bun>` | Default: detected. |
 | `--venv <PATH>` | Python only. Default: `.venv` if it exists in the project. |
@@ -80,7 +80,7 @@ Also defined in `SPEC-platform-setup.md`. A separate command, run only when aske
 | `--index` | Index the new project right after adding it (same as running `workbench index --project <id>`). A failed index does not undo the add. |
 
 Steps, all or nothing:
-1. Resolve and validate the path (exists, is a directory).
+1. Resolve and validate the path (exists, is a directory). It is resolved against the current directory, then stored relative to the workspace root (with `..` where needed), or absolute if no relative form exists, as `SPEC-workspace.md` requires.
 2. Detect language and dependency manager, unless given.
 3. Build the project and validate it against the workspace rules (unique id, valid pair, and so on).
 4. Create `.workbench/memory/<id>/INIT-MEMORY.md`, seeded as in `SPEC-workspace.md`, and an empty `annotations.yml` beside it. A file that already exists (the folder is kept by `project remove`) is left untouched, never overwritten.
@@ -234,7 +234,7 @@ Runs and manages the MCP server, specified in `SPEC-core.md`: `start [--mode M] 
 - Rust 2024; `clap` (derive) for arguments; engine and adapters from the workspace.
 - `serde` and `yaml_serde` come in through `lib/adapters`; the CLI does not depend on them directly.
 - No new dependencies for Slice A. Integration tests use the binary path cargo provides to tests (`env!("CARGO_BIN_EXE_workbench")`) and `std::process::Command`.
-- Later slices need a file-event crate (`watch`), an HTTP client (the `claude` and `ollama` adapters) and possibly a temp-directory crate. None is approved yet: each is raised and approved when its task is planned (see Boundaries, "Ask first").
+- **Approved for the later slices** (added to the workspace `Cargo.toml` by the task that first uses them, not before): `notify` for the `watch` file-event source, and `reqwest` (async, on the workspace's `tokio`; `default-features = false`, `rustls-tls` and `json`) for the `claude` and `ollama` adapters. Versions are pinned in `Cargo.toml` when added. `deny.toml` allows only MIT, Apache-2.0 and Unicode-3.0, which the TLS stack's licences may not satisfy, so that task must run `cargo deny check` and add any exception it needs, each with a reason, as a reviewed change. A temp-directory crate is still ask-first.
 
 ## Project Structure
 
@@ -307,7 +307,7 @@ Follow the existing conventions: doc comments on every public item, no `unwrap` 
 ## Boundaries
 
 - **Always:** change nothing on failure; print what was created or changed; validate with the engine, not in the CLI.
-- **Ask first:** adding a dependency (for example `assert_cmd`, a file-watching crate such as `notify`, a temp-directory crate, or the HTTP client for the `claude` and `ollama` adapters); running an external program for the `copilot-cli` provider; a `--force` flag; any command that writes outside the workspace root or the project paths; a `--json` output mode.
+- **Ask first:** adding a dependency other than the two approved in Tech Stack (`notify`, `reqwest`), for example `assert_cmd` or a temp-directory crate; a `deny.toml` licence exception; running an external program for the `copilot-cli` provider; a `--force` flag; any command that writes outside the workspace root or the project paths; a `--json` output mode.
 - **Never:** call an LLM without the explicit flag and a `semantic.llm` config; send anything other than indexed source nodes; print or log the API key; delete a person-written annotation without the person running `retract` or `prune`; modify a project's source files from a CLI command (indexing, watching and annotating only read them; code is edited only by the `edit` tools of the `developer-support` MCP server); install git hooks (the watcher is started only by `workbench watch`); run project code or package managers during detection; read secrets; overwrite `INIT-MEMORY.md`; delete a memory folder without `--purge-memory`.
 
 ## Success Criteria
