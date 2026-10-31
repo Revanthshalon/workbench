@@ -2,7 +2,9 @@
 
 Module `cli` from the [capability map](capability-map.md). Status: **approved.**
 
-Depends on [`workspace`](SPEC-workspace.md) (approved) and, for the `mcp` command group, [`core`](SPEC-core.md). The `index` and `semantic` command groups also depend on `graph` and `semantic-layer`; they are specified here as the command surface and wired once those modules exist.
+Depends on [`workspace`](SPEC-workspace.md) (approved) and, for the `mcp` command group, [`core`](SPEC-core.md). `storage status` depends on `storage`, and `context check | sync` on `contexts`. The `index`, `watch` and `semantic` command groups also depend on `graph` and `semantic-layer`; they are specified here as the command surface and wired once those modules exist.
+
+**Build slices.** *Slice A* (buildable now): `init`, `project add | list | remove`, workspace discovery, common behaviour, and the `mcp` and `storage status` wiring once `storage` is approved. *Later slices*, each started only when the specs it needs are approved: `index` and `watch` (`SPEC-index.md`, `SPEC-graph.md`), `semantic` (`SPEC-semantic-layer.md`), `context check | sync` (`contexts`, `storage`, `graph`) and `platform` (`SPEC-platform-setup.md`, `SPEC-lsp.md`).
 
 ## Decisions
 
@@ -81,10 +83,10 @@ Steps, all or nothing:
 1. Resolve and validate the path (exists, is a directory).
 2. Detect language and dependency manager, unless given.
 3. Build the project and validate it against the workspace rules (unique id, valid pair, and so on).
-4. Create `.workbench/memory/<id>/INIT-MEMORY.md`, seeded as in `SPEC-workspace.md`, and an empty `annotations.yml` beside it.
+4. Create `.workbench/memory/<id>/INIT-MEMORY.md`, seeded as in `SPEC-workspace.md`, and an empty `annotations.yml` beside it. A file that already exists (the folder is kept by `project remove`) is left untouched, never overwritten.
 5. Save the config.
 
-If any step fails, the config and the memory folder are left as they were.
+If any step fails, the config is left as it was and the memory files this run created are removed. Files and folders that existed before the run are never deleted or changed.
 
 **Detection rules** (read files only, never run project code):
 
@@ -114,7 +116,7 @@ Builds the AST data for the projects in the workspace and keeps it up to date. I
 |---|---|
 | `--project <ID>` | Limit to this project. Repeatable. Default: every project. An unknown id fails and lists the known ones. |
 | `--changed` | Only consider files that git reports as changed. Faster on large repos; falls back to content hashes where a project is not a git repo. |
-| `--full` | Re-parse every file in scope, ignoring what is already indexed. |
+| `--full` | Re-parse every file in scope, ignoring what is already indexed. Cannot be combined with `--changed`: clap rejects the pair with exit `2`. |
 | `--annotate` | After indexing, ask the configured LLM to draft annotations for the nodes that are new or changed and have none. Same behaviour as `semantic generate` on those nodes. Off by default. |
 
 - Prints progress to stderr and a summary to stdout, per project: files parsed, unchanged, removed, nodes re-linked, parse failures, and the number of annotations that became stale.
@@ -231,7 +233,8 @@ Runs and manages the MCP server, specified in `SPEC-core.md`: `start [--mode M] 
 
 - Rust 2024; `clap` (derive) for arguments; engine and adapters from the workspace.
 - `serde` and `yaml_serde` come in through `lib/adapters`; the CLI does not depend on them directly.
-- No new dependencies. Integration tests use the binary path cargo provides to tests (`env!("CARGO_BIN_EXE_workbench")`) and `std::process::Command`.
+- No new dependencies for Slice A. Integration tests use the binary path cargo provides to tests (`env!("CARGO_BIN_EXE_workbench")`) and `std::process::Command`.
+- Later slices need a file-event crate (`watch`), an HTTP client (the `claude` and `ollama` adapters) and possibly a temp-directory crate. None is approved yet: each is raised and approved when its task is planned (see Boundaries, "Ask first").
 
 ## Project Structure
 
@@ -264,6 +267,8 @@ lib/adapters/src/         # + project_inspector.rs, gitignore_file.rs, server_co
 | `GitignoreStore` | `ensure_ignored(root, entry)` appends the entry once, creating the file if missing. |
 | `ServerConfigStore` | `create_template(root)` writes the server config and the context config templates under `.workbench/mcp/`, never overwriting. |
 
+Ports for later slices, added when their slice is planned: `LlmClient` (`generate`, `index --annotate`; one adapter per provider), `FileEventSource` (`watch`), `IndexLock` (the single write lock shared by `index`, `watch` and MCP `reindex`) and the watcher's control channel (`flush`, `stop`, `status`).
+
 `WorkspaceStore`, `MemoryStore` and `ContextSource` come from `SPEC-workspace.md`. The `index` and `semantic` commands call engine use cases (`index_projects`, and the annotation use cases) that are defined by `SPEC-index.md` and `SPEC-semantic-layer.md`; the CLI adds no rules of its own for them.
 
 ## Code Style
@@ -295,8 +300,8 @@ Follow the existing conventions: doc comments on every public item, no `unwrap` 
 - **Integration tests** (`services/cli/tests/cli.rs`): run the real binary in a temp directory through the sequence `init`, `project add`, `list`, `remove`, and check the files and exit codes.
 - **LLM drafting and prune:** with a fake `LlmClient` port: no call is made without the flag, without `semantic.llm`, or with `--dry-run`; the missing-variable error names the variable; a person-written annotation is never overwritten; `prune --dry-run` removes nothing; `prune` without `--yes` asks first and refuses to run non-interactively; `prune` removes exactly the stale and orphaned entries it listed.
 - **Watcher:** with a fake file-event source: a burst of events becomes one index run; ignored paths trigger nothing; `watch` twice runs one watcher; `flush` returns only after pending changes are indexed and works when no watcher runs; `stop` finishes the batch in progress; the index lock makes a concurrent `index` wait. An integration test starts the real watcher in a temp workspace, edits a file, runs `flush`, and checks the index changed.
-- **Index and semantic commands:** engine tests with fake ports check that `--project`, `--changed` and `--full` map to the right request, that an unknown project or target fails with a hint, and that a `link` without `--to` is rejected. End-to-end runs of both groups are part of the integration test once `graph` and `semantic-layer` exist.
-- **Node flags:** `--file` without `--project`, `--symbol` without `--file`, and `link` without `--to-project` are rejected by argument parsing with a clear message.
+- **Index and semantic commands:** engine tests with fake ports check that `--project`, `--changed` and `--full` map to the right request, that an unknown project or target fails with a hint, that `--full` with `--changed` is rejected, and that a `link` without a target (`--to-project` or `--to-custom`) or with both is rejected. End-to-end runs of both groups are part of the integration test once `graph` and `semantic-layer` exist.
+- **Node flags:** `--file` without `--project`, `--symbol` without `--file`, and a `link` without `--to-project` or `--to-custom` are rejected by argument parsing with a clear message.
 - Every row of the detection table and every error message in "Common behaviour" has a test.
 
 ## Boundaries
