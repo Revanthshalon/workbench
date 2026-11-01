@@ -5,10 +5,10 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
 
 ## Phase 1: Foundation
 
-- [ ] **T1: Adapters crate, `DirFileStore` moved** (S)
-  - Acceptance: new member `lib/adapters` (package `adapters`, depends on `engine`, `serde`, `yaml_serde`); `DirFileStore` and its `ConfigStore` impl live there; `services/cli` depends on it; behaviour unchanged.
-  - Verify: standing checks; `cargo run -p workbench -- init --out ./tmp` still creates `./tmp/.workbench/config.yml` and a second run fails.
-  - Files: `Cargo.toml`, `lib/adapters/Cargo.toml`, `lib/adapters/src/{lib,dir_file}.rs`, `services/cli/Cargo.toml`, `services/cli/src/{main,adapters/mod}.rs`.
+- [ ] **T1: Workspace scaffold** (S)
+  - Acceptance: root `Cargo.toml` lists members `lib/*` and `services/cli` and workspace dependency `adapters`; crates `engine` (`lib/engine`, depends on `thiserror`), `adapters` (`lib/adapters`, depends on `engine`, `serde`, `yaml_serde`) and `workbench` (`services/cli`, depends on `engine`, `adapters`, `clap`), each inheriting the workspace lints; engine has `Error` (`AlreadyExists`, `Storage`) and empty `workspace` module; the binary parses `--help` and exits 0.
+  - Verify: standing checks; `cargo run -p workbench -- --help` prints help.
+  - Files: `Cargo.toml`, `lib/engine/{Cargo.toml,src/{lib,error}.rs}`, `lib/adapters/{Cargo.toml,src/lib.rs}`, `services/cli/{Cargo.toml,src/main.rs}`.
   - Depends on: none.
 
 - [ ] **T2: Project identifiers and enums** (S)
@@ -36,7 +36,7 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
   - Depends on: T4.
 
 - [ ] **T6: Memory layout and ports** (M)
-  - Acceptance: project and workspace `INIT-MEMORY.md` templates (fixed headings); `SourceFile { name, content, truncated }`; seed builder (headings + "Existing context" quoting each source under its name, adding `[truncated at 20 KB]` after a source whose `truncated` is set); ports `WorkspaceStore` (`create_empty(&config)`), `MemoryStore` (`create`→`Created`, `create_workspace`, `discard`, `remove`, `list_files`), `ContextSource`, `IdSource`, `GitignoreStore`, `ProjectInspector` (`inspect(project, compose)`) added **beside** the old `ConfigStore`, which stays until T12; the `#[cfg(test)]` `testing` module with recording fakes for these ports.
+  - Acceptance: project and workspace `INIT-MEMORY.md` templates (fixed headings); `SourceFile { name, content, truncated }`; seed builder (headings + "Existing context" quoting each source under its name, adding `[truncated at 20 KB]` after a source whose `truncated` is set); ports `WorkspaceStore` (`create_empty(&config)`), `MemoryStore` (`create`→`Created`, `create_workspace`, `discard`, `remove`, `list_files`), `ContextSource`, `IdSource`, `GitignoreStore`, `ProjectInspector` (`inspect(project, compose)`) the `#[cfg(test)]` `testing` module with recording fakes for these ports.
   - Verify: unit tests: sources found, none found, truncated source gets the marker.
   - Files: `lib/engine/src/workspace/memory.rs`, `ports.rs`, `lib.rs`, `lib/engine/src/testing.rs`.
   - Depends on: T2, T4.
@@ -58,11 +58,11 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
   - Files: `lib/adapters/src/{memory_dir,lib}.rs`.
   - Depends on: T6.
 
-- [ ] **T9: Gitignore adapter** (XS)
-  - Acceptance: `ensure_ignored(root, ".workbench/")` appends once; creates the file if missing; handles a file without a trailing newline.
-  - Verify: adapter tests for the three cases plus "existing entry, nothing added".
-  - Files: `lib/adapters/src/{gitignore_file,lib}.rs`.
-  - Depends on: T1, T6.
+- [ ] **T9: Gitignore and id adapters** (XS)
+  - Acceptance: `GitignoreFile::ensure_ignored(root, ".workbench/")` appends once; creates the file if missing; handles a file without a trailing newline. `RandomIds` implements `IdSource` from std only (four lowercase hex chars from `RandomState`).
+  - Verify: adapter tests for the three gitignore cases plus "existing entry, nothing added"; two `RandomIds` calls return 4-char hex strings.
+  - Files: `lib/adapters/src/{gitignore_file,id_source,lib}.rs`.
+  - Depends on: T6.
 
 - [ ] **T10: Project inspector adapter** (M)
   - Acceptance: `inspect(path, compose)` fails with `NotADirectory` when `path` is not a directory and with `Invalid { field: "compose" }` when a given `compose` (relative to the project) does not exist; otherwise per the detection table (angular.json, pyproject.toml, `uv.lock`/`[tool.uv]`, `poetry.lock`/`[tool.poetry]`, `pnpm-lock.yaml`, `yarn.lock`, `package-lock.json`, `bun.lock`, `bun.lockb`) and `.venv`; returns what is detectable (language/manager may be absent or ambiguous); reads files only, runs nothing. `ponytail:` comment on the header-line match for `[tool.*]`.
@@ -76,16 +76,16 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
 ## Phase 3: Commands
 
 - [ ] **T11: `init` use case** (S)
-  - Acceptance: `init_workspace(workspace, memory, gitignore, ids, root, folder_name)` (added beside the old `init`, which stays until T12) creates the empty config with `version: 1`, storage `localhost`/`7687`/namespace (sanitized folder name + `-` + `IdSource` suffix, ≤64 chars, `workspace` if empty), the workspace `INIT-MEMORY.md`, and the `.gitignore` entry; refuses if the config exists and changes nothing.
+  - Acceptance: `init_workspace(workspace, memory, gitignore, ids, root, folder_name)` creates the empty config with `version: 1`, storage `localhost`/`7687`/namespace (sanitized folder name + `-` + `IdSource` suffix, ≤64 chars, `workspace` if empty), the workspace `INIT-MEMORY.md`, and the `.gitignore` entry; refuses if the config exists and changes nothing.
   - Verify: unit tests with fakes: refused when config exists (nothing written), namespace content, two suffixes give two namespaces, folder name with spaces/capitals/Unicode gives a valid namespace.
   - Files: `lib/engine/src/init.rs`, `workspace/config.rs`, `lib.rs`.
   - Depends on: T4, T6.
 
 - [ ] **T12: `workbench init` end to end** (M)
-  - Acceptance: `IdSource` adapter (std only); CLI `init [--out]` without `--platform`; prints what was created; `PlatformArg` removed; `output.rs` created with the `Error: <what>. <what to do>` formatter; exit codes 0/1 (clap gives 2). Removes what the new `init` replaces: old `init`, `ConfigStore` and `DirFileStore` (`dir_file.rs`; `WorkspaceFile::create_empty` now creates `.workbench/`).
-  - Verify: integration test: `init` in a temp dir creates `config.yml`, `memory/INIT-MEMORY.md` and the `.gitignore` line; a second run exits 1 with no changes; `--platform` now exits 2; the written config loads back as an empty workspace.
-  - Files: `lib/adapters/src/{id_source,lib}.rs`, `lib/adapters/src/dir_file.rs` (deleted), `lib/engine/src/{init,ports,lib}.rs`, `services/cli/src/{cli,main,output}.rs`, `services/cli/tests/cli.rs`.
-  - Depends on: T7, T8, T9, T11.
+  - Acceptance: CLI `init [--out]` (no `--platform`); prints what was created; `output.rs` with the `Error: <what>. <what to do>` formatter; exit codes 0/1 (clap gives 2); the integration-test harness (temp-dir helper) in `tests/cli.rs`.
+  - Verify: integration test: `init` in a temp dir creates `config.yml`, `memory/INIT-MEMORY.md` and the `.gitignore` line; a second run exits 1 with no changes; `--platform` exits 2; the written config loads back as an empty workspace.
+  - Files: `services/cli/src/{cli,main,output}.rs`, `services/cli/tests/cli.rs`.
+  - Depends on: T1, T7, T8, T9, T11.
 
 - [ ] **T13: Workspace discovery and `project list`** (M)
   - Acceptance: `locate_workspace` searches upward for `.workbench/`; `--workspace <DIR>` overrides; not found prints `Error: no .workbench/ found from <cwd>. Run 'workbench init'.`; `list_projects` use case; `project list` prints `id  language  manager  path` per project and a hint when empty.

@@ -6,7 +6,7 @@ Status: **approved.** Implements [`SPEC-workspace.md`](../spec/SPEC-workspace.md
 
 ```
 lib/engine/src/
-├── lib.rs  error.rs  ports.rs  init.rs  domain.rs (Platform, kept)
+├── lib.rs  error.rs  ports.rs  init.rs  testing.rs (test fakes)
 └── workspace/
     ├── mod.rs      re-exports and the use cases: list_projects, add_project, remove_project
     ├── project.rs  ProjectId, Language, DependencyManager, Project, Environment
@@ -17,7 +17,7 @@ lib/engine/src/
     ├── add.rs  remove.rs
     └── memory.rs   templates and seed builder
 lib/adapters/src/
-├── lib.rs  dir_file.rs (moved in T1, deleted in T12)  workspace_file.rs  memory_dir.rs
+├── lib.rs  workspace_file.rs  memory_dir.rs
 ├── gitignore_file.rs  project_inspector.rs  id_source.rs
 services/cli/src/
 ├── main.rs  cli.rs  output.rs  utils/
@@ -99,8 +99,8 @@ One enum in `error.rs`. Each `Display` is `<what happened>. <what to do>`; `main
 
 | Variant | Used for |
 |---|---|
-| `AlreadyExists(PathBuf)` (kept) | `init` when `config.yml` exists |
-| `Storage(String)` (kept) | I/O failure in an adapter |
+| `AlreadyExists(PathBuf)` | `init` when `config.yml` exists |
+| `Storage(String)` | I/O failure in an adapter |
 | `WorkspaceNotFound { from: PathBuf }` | `no .workbench/ found from <cwd>. Run 'workbench init'.` (exact text from the spec) |
 | `InvalidProjectId(String)` | bad id or no valid derived id, hint names `--id` |
 | `Invalid { project: Option<ProjectId>, field: &'static str, reason: String }` | every rule in the "Project rules" table; names project and field |
@@ -134,7 +134,7 @@ pub trait GitignoreStore { fn ensure_ignored(&self, root: &Path, entry: &str) ->
 pub trait IdSource { fn suffix(&self) -> String; }   // four lowercase hex chars
 ```
 
-`create_empty` takes the config so `init` decides the content (namespace, `storage` block) and the adapter only writes it (it also creates `.workbench/`, which is why `DirFileStore` goes away). `list_files` is an addition to the spec's port table, needed to print what `--purge-memory` will delete (**LLD decision**). Both changes are reflected in `SPEC-workspace.md`'s port table. The new ports are added beside `ConfigStore`; T12 removes `ConfigStore`, the old `init` and `DirFileStore` when the CLI is switched over. Ports take the workspace root at construction (`WorkspaceFile::new(root)`), as `DirFileStore::new(dir)` does today.
+`create_empty` takes the config so `init` decides the content (namespace, `storage` block) and the adapter only writes it (it also creates `.workbench/`). `list_files` is an addition to the spec's port table, needed to print what `--purge-memory` will delete (**LLD decision**). Both changes are reflected in `SPEC-workspace.md`'s port table. Ports take the workspace root at construction (`WorkspaceFile::new(root)`).
 
 `Inspection { language: Vec<Language>, python_managers: Vec<DependencyManager>, node_managers: Vec<DependencyManager>, venv: Option<PathBuf>, compose: Option<PathBuf> }` keeps *what was seen*; the use case decides ambiguity, so the rule lives in the engine.
 
@@ -196,7 +196,7 @@ Order is memory then config, so the only state a failure can leave is memory fil
 
 ## 8. CLI
 
-`cli.rs`: `Cli { workspace: Option<PathBuf>, command }`, `Command::{Init{out}, Project(ProjectCommand)}`, `ProjectCommand::{Add(AddArgs), List, Remove{id, purge_memory}}`. Enums via `LanguageArg` and `DependencyManagerArg` (the `PlatformArg` pattern) with `From` into the engine types. `--workspace` is `global = true`. `PlatformArg` is removed (nothing uses it in this slice). `--index` is not defined, so clap rejects it with exit 2.
+`cli.rs`: `Cli { workspace: Option<PathBuf>, command }`, `Command::{Init{out}, Project(ProjectCommand)}`, `ProjectCommand::{Add(AddArgs), List, Remove{id, purge_memory}}`. Enums via `LanguageArg` and `DependencyManagerArg` with `From` into the engine types. `--workspace` is `global = true`. `init` has no `--platform` and `--index` is not defined, so clap rejects it with exit 2.
 
 `output.rs`: pure functions from reports to `String` (`init_report`, `project_rows`, `purge_preview`), so formatting is unit-tested without a process. `main.rs` stays wiring: parse, locate workspace, build adapters, call the use case, print, map `Err` to `Error: {e}` and exit 1. Progress/diagnostics to stderr, results to stdout. Row format for `project list` follows the spec snippet: tab-separated `id language manager path`; the empty hint goes to stdout.
 
