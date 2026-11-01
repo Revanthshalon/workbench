@@ -1,6 +1,6 @@
 # Low-level design: workspace model and CLI Slice A
 
-Status: **draft for review.** Implements [`SPEC-workspace.md`](../spec/SPEC-workspace.md) and Slice A of [`SPEC-cli.md`](../spec/SPEC-cli.md) (`init`, `project add | list | remove`, discovery, common behaviour). System context: [`HLD-workbench.md`](../hld/HLD-workbench.md). Tasks: [`tasks/todo.md`](../../tasks/todo.md). The specs win on behaviour; this document fixes types, signatures and mechanics. Choices the specs leave open are marked **LLD decision**.
+Status: **approved.** Implements [`SPEC-workspace.md`](../spec/SPEC-workspace.md) and Slice A of [`SPEC-cli.md`](../spec/SPEC-cli.md) (`init`, `project add | list | remove`, discovery, common behaviour). System context: [`HLD-workbench.md`](../hld/HLD-workbench.md). Tasks: [`tasks/todo.md`](../../tasks/todo.md). The specs win on behaviour; this document fixes types, signatures and mechanics. Choices the specs leave open are marked **LLD decision**.
 
 ## 1. Crates and files
 
@@ -227,8 +227,8 @@ CLI            engine::add_project      Inspector   ContextSource   MemoryDir   
  ◄── report (id, path, language, manager, files created)
 ```
 
-## 11. Open points for review
+## 11. Decisions confirmed at approval
 
-1. **LLD decisions to confirm:** atomic save by temp file and rename; `list_files` added to `MemoryStore`; whole-map replace for LSP `settings`; `without_project` fails when a Compose `services` map names the project; no rollback of a half-done `init`.
-2. The engine's own `Value` type for LSP settings (alternative: keep the raw YAML text as a string and parse later in the `lsp` module).
-3. Symlinked context files are followed; say if they should be skipped.
+1. **LLD decisions:** atomic save by temp file and rename; `list_files` added to `MemoryStore`; whole-map replace for LSP `settings`; `without_project` fails when a Compose `services` map names the project; no rollback of a half-done `init`.
+2. The engine has its own `Value` type for LSP settings (alternative not taken: keep the raw YAML text as a string and parse it later in the `lsp` module).
+3. Symlinked context files are followed.

@@ -1,6 +1,6 @@
 # High-level design: Workbench
 
-Status: **draft for review.** Summarizes the approved [capability map](../spec/capability-map.md) and module specs at system level. Where this document and a spec disagree, the spec wins; fix this document. Component-level design for the first build slice is in [`LLD-workspace-cli.md`](../lld/LLD-workspace-cli.md).
+Status: **approved.** Summarizes the approved [capability map](../spec/capability-map.md) and module specs at system level. Where this document and a spec disagree, the spec wins; fix this document. Component-level design for the first build slice is in [`LLD-workspace-cli.md`](../lld/LLD-workspace-cli.md).
 
 ## 1. Purpose and scope
 
