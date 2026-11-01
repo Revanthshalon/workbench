@@ -159,15 +159,14 @@ Step 3 is first so a repeat run changes nothing. If 4 or 5 fail after 3, the con
 ```
 add_project(ws, memory, ctx, inspector, req)      req: path(abs, resolved), root, id?, language?, manager?, venv?, activate?, compose?
   1. inspection = inspector.inspect(path, req.compose)     → NotADirectory / compose does not exist (adapter checks; engine does no I/O)
-  2. (inspection is a read of files only)
-  3. language, manager = given or decided from inspection  → Undetected{flag} when ambiguous/none
-  4. id = req.id or ProjectId::derive(dir_name)            → InvalidProjectId
-  5. defaults: venv (.venv if seen, Python), activate (uv run | poetry run | none), compose (given or seen)
-  6. stored_path = relative_to(root, path) or absolute
-  7. config = ws.load()?.with_project(project)?            // validates, rejects duplicate id/path
-  8. seed = memory::seed(ctx.read(path)?)
-  9. created = memory.create(&id, &seed)?
- 10. if let Err(e) = ws.save(&config) { memory.discard(&created); return Err(e) }
+  2. language, manager = given or decided from inspection  → Undetected{flag} when ambiguous/none
+  3. id = req.id or ProjectId::derive(dir_name)            → InvalidProjectId
+  4. defaults: venv (.venv if seen, Python), activate (uv run | poetry run | none), compose (given or seen)
+  5. stored_path = relative_to(root, path) or absolute
+  6. config = ws.load()?.with_project(project)?            // validates, rejects duplicate id/path
+  7. seed = memory::seed(ctx.read(path)?)
+  8. created = memory.create(&id, &seed)?
+  9. if let Err(e) = ws.save(&config) { memory.discard(&created); return Err(e) }
 ```
 
 Order is memory then config, so the only state a failure can leave is memory files, and `discard(created)` removes exactly the ones this run made; files left by an earlier `project remove` are not in `created` and stay. A given `--compose` that does not exist fails in step 1 through the inspector (spec: error when `project add` is given it).
