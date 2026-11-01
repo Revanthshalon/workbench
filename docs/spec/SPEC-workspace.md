@@ -154,7 +154,7 @@ lib/engine/src/
 
 lib/adapters/src/        # shared driven adapters (new crate)
 ├── lib.rs
-├── dir_file.rs         # moved from services/cli: creates .workbench/ and its files
+├── dir_file.rs         # moved from services/cli first; removed once workspace_file.rs creates .workbench/
 ├── workspace_file.rs   # YAML adapter for WorkspaceStore (.workbench/config.yml)
 └── memory_dir.rs       # filesystem adapter for MemoryStore and ContextSource
 ```
@@ -165,9 +165,9 @@ The engine has no I/O. `services/cli` (the CLI and the MCP server) picks adapter
 
 | Port | Responsibility |
 |---|---|
-| `WorkspaceStore` | `load()` returns a validated `WorkspaceConfig`; `save(&config)`; `create_empty()` |
-| `MemoryStore` | `create(project_id, seed)` creates the folder, `INIT-MEMORY.md` and an empty `annotations.yml` if absent, never overwrites, and returns the paths it created; `create_workspace()` does the same for the workspace-level file; `discard(created)` removes exactly those paths (used by `project add` to roll back); `remove(project_id)` deletes the project's whole folder (used only by `project remove --purge-memory`) |
-| `ContextSource` | `read(project_path)` returns the seed files that exist, each capped at 20 KB |
+| `WorkspaceStore` | `load()` returns a validated `WorkspaceConfig`; `save(&config)`; `create_empty(&config)` creates `.workbench/` and writes the given config, failing if `config.yml` exists (the caller, `init`, decides the content) |
+| `MemoryStore` | `create(project_id, seed)` creates the folder, `INIT-MEMORY.md` and an empty `annotations.yml` if absent, never overwrites, and returns the paths it created; `create_workspace()` does the same for the workspace-level file; `discard(created)` removes exactly those paths (used by `project add` to roll back); `remove(project_id)` deletes the project's whole folder (used only by `project remove --purge-memory`); `list_files(project_id)` lists what `remove` would delete, so the command can print it first |
+| `ContextSource` | `read(project_path)` returns the seed files that exist, each cut at 20 KB with a `truncated` flag the seed builder turns into the marker line |
 | `IdSource` | `suffix()` returns four random hexadecimal characters; the engine has no I/O, so `init` takes this port to build the namespace and tests inject a fixed one |
 
 ## Code Style
