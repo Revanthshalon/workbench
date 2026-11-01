@@ -18,14 +18,14 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
   - Depends on: none (T1 not required).
 
 - [ ] **T3: Project, environment and LSP precedence** (M)
-  - Acceptance: `Project` (id, path, language, manager, optional compose, optional `Environment { venv, activate }` with `venv` rejected for Angular, optional `LspSettings`); `LspSettings` with field-by-field merge (project over workspace default over catalog; `settings` replaced as a whole), an engine `Value` enum for `settings`, `enabled: false` respected.
+  - Acceptance: `Project` (id, path, language, manager, optional compose, optional `Environment { venv, activate }` with `venv` rejected for Angular, optional `LspSettings`); `LspSettings` with field-by-field merge (project over workspace default over catalog; `settings` replaced as a whole), an engine `Value` enum for `settings`, `enabled: false` respected. (The `WorkspaceConfig::effective_lsp` lookup is in T4.)
   - Verify: unit tests: partial override keeps other fields; `enabled: false`; venv on Angular rejected.
   - Files: `lib/engine/src/workspace/{project,lsp,mod}.rs`.
   - Depends on: T2.
 
 - [ ] **T4: Workspace config and validation** (M)
-  - Acceptance: `WorkspaceConfig` (version, `lsp.<language>` for `python|angular`, `Storage` with defaults and validation, top-level `compose`, `semantic.llm`, projects). `new`/`validate` rejects: version ≠ 1, duplicate ids, duplicate resolved paths (nesting allowed), duplicate top-level compose path, unknown project id in `compose[].services`, bad port, bad namespace, bad env var names, `semantic.llm` rule violations (provider/model/api_key_env). Errors name project and field. Structure only; no filesystem access.
-  - Verify: unit tests, one per row of the spec's "Project rules" table.
+  - Acceptance: `WorkspaceConfig` (version, `lsp.<language>` for `python|angular`, `Storage` with defaults and validation, top-level `compose`, `semantic.llm`, projects). `new`/`validate` rejects: version ≠ 1, duplicate ids, duplicate resolved paths (nesting allowed), duplicate top-level compose path, unknown project id in `compose[].services`, bad port, bad namespace, bad env var names, `semantic.llm` rule violations (provider, model, endpoint: rejected for `copilot-cli`, `api_key_env`), `lsp.server` (non-empty, no whitespace) and `lsp.command` (non-empty, no empty element). `effective_lsp(&id)` returns the merged settings (project over workspace default). Errors name project and field. Structure only; no filesystem access.
+  - Verify: unit tests, one per row of the spec's "Project rules" table; `effective_lsp` with and without a workspace default.
   - Files: `lib/engine/src/workspace/{config,mod}.rs`, `error.rs`.
   - Depends on: T3.
 
@@ -36,10 +36,10 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
   - Depends on: T4.
 
 - [ ] **T6: Memory layout and ports** (M)
-  - Acceptance: project and workspace `INIT-MEMORY.md` templates (fixed headings); seed builder (headings + "Existing context" quoting each source under its name, 20 KB cap with `[truncated at 20 KB]`); ports `WorkspaceStore` (`create_empty(&config)`), `MemoryStore` (`create`→`Created`, `create_workspace`, `discard`, `remove`, `list_files`), `ContextSource`, `IdSource`, `GitignoreStore`, `ProjectInspector`; old `ConfigStore` removed.
-  - Verify: unit tests: sources found, none found, oversized capped with marker.
-  - Files: `lib/engine/src/workspace/memory.rs`, `ports.rs`, `lib.rs`, `init.rs` (compile fix only).
-  - Depends on: T2.
+  - Acceptance: project and workspace `INIT-MEMORY.md` templates (fixed headings); `SourceFile { name, content, truncated }`; seed builder (headings + "Existing context" quoting each source under its name, adding `[truncated at 20 KB]` after a source whose `truncated` is set); ports `WorkspaceStore` (`create_empty(&config)`), `MemoryStore` (`create`→`Created`, `create_workspace`, `discard`, `remove`, `list_files`), `ContextSource`, `IdSource`, `GitignoreStore`, `ProjectInspector` (`inspect(project, compose)`) added **beside** the old `ConfigStore`, which stays until T12; the `#[cfg(test)]` `testing` module with recording fakes for these ports.
+  - Verify: unit tests: sources found, none found, truncated source gets the marker.
+  - Files: `lib/engine/src/workspace/memory.rs`, `ports.rs`, `lib.rs`, `lib/engine/src/testing.rs`.
+  - Depends on: T2, T4.
 
 ### Checkpoint A: foundation
 - [ ] Standing checks pass; `init --out ./tmp` still works; review with human.
@@ -47,14 +47,14 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
 ## Phase 2: Adapters
 
 - [ ] **T7: YAML workspace store** (M)
-  - Acceptance: `WorkspaceFile` implements `WorkspaceStore`: `load` (serde DTOs, `deny_unknown_fields`, maps to the engine model, validates), `save` (atomic: temp file, `fsync`, rename), `create_empty`; a config whose project path does not exist still loads; missing `path` fails with a clear error naming the project.
-  - Verify: adapter tests: round trip with a config holding `lsp`, `compose`, `storage`, `semantic.llm` and two projects gives an equal model; unknown key rejected; unknown version rejected.
+  - Acceptance: `WorkspaceFile` implements `WorkspaceStore`: `load` (serde DTOs, `deny_unknown_fields`, maps to the engine model, validates), `save` (atomic: temp file, `fsync`, rename), `create_empty`; a config whose project path does not exist still loads; missing `path` fails with a clear error naming the project. `create_empty` creates `.workbench/` and writes the given config, failing with `AlreadyExists` if `config.yml` exists. Adapter tests use a small temp-dir helper with a drop guard (`#[cfg(test)]`, a few lines; no crate).
+  - Verify: adapter tests: round trip with a config holding `lsp`, `compose`, `storage`, `semantic.llm` and two projects gives an equal model; unknown key rejected; unknown version rejected; `create_empty` twice fails the second time.
   - Files: `lib/adapters/src/{workspace_file,lib}.rs`.
-  - Depends on: T4.
+  - Depends on: T4, T6.
 
 - [ ] **T8: Memory and context adapters** (S)
-  - Acceptance: `MemoryDir` implements `MemoryStore` (creates folder, `INIT-MEMORY.md`, empty `annotations.yml`; never overwrites; returns what it created; `discard` removes exactly those; `remove` deletes the folder) and `ContextSource` (reads `README.md`, `CLAUDE.md`, `AGENTS.md` that exist, skips non-UTF-8, caps at 20 KB).
-  - Verify: adapter tests: existing copies of both files untouched; `discard` only removes created paths; `remove` deletes folder.
+  - Acceptance: `MemoryDir` implements `MemoryStore` (creates folder, `INIT-MEMORY.md`, empty `annotations.yml`; never overwrites; returns what it created; `discard` removes exactly those; `remove` deletes the folder) and `ContextSource` (reads `README.md`, `CLAUDE.md`, `AGENTS.md` that exist, skips non-UTF-8, cuts at 20 KB on a char boundary and sets `SourceFile::truncated`).
+  - Verify: adapter tests: existing copies of both files untouched; `discard` only removes created paths; `remove` deletes folder; an oversized file comes back cut with `truncated` set.
   - Files: `lib/adapters/src/{memory_dir,lib}.rs`.
   - Depends on: T6.
 
@@ -65,8 +65,8 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
   - Depends on: T1, T6.
 
 - [ ] **T10: Project inspector adapter** (M)
-  - Acceptance: `inspect(path)` per the detection table (angular.json, pyproject.toml, `uv.lock`/`[tool.uv]`, `poetry.lock`/`[tool.poetry]`, `pnpm-lock.yaml`, `yarn.lock`, `package-lock.json`, `bun.lock`, `bun.lockb`) and `.venv`; returns what is detectable (language/manager may be absent or ambiguous); reads files only, runs nothing. `ponytail:` comment on the header-line match for `[tool.*]`.
-  - Verify: fixture-directory tests: uv, poetry, angular with each lock file, both languages, both Python managers, empty.
+  - Acceptance: `inspect(path, compose)` fails with `NotADirectory` when `path` is not a directory and with `Invalid { field: "compose" }` when a given `compose` (relative to the project) does not exist; otherwise per the detection table (angular.json, pyproject.toml, `uv.lock`/`[tool.uv]`, `poetry.lock`/`[tool.poetry]`, `pnpm-lock.yaml`, `yarn.lock`, `package-lock.json`, `bun.lock`, `bun.lockb`) and `.venv`; returns what is detectable (language/manager may be absent or ambiguous); reads files only, runs nothing. `ponytail:` comment on the header-line match for `[tool.*]`.
+  - Verify: fixture-directory tests: uv, poetry, angular with each lock file, both languages, both Python managers, empty; file instead of directory; missing and present `compose`.
   - Files: `lib/adapters/src/{project_inspector,lib}.rs`.
   - Depends on: T2, T6.
 
@@ -76,28 +76,28 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
 ## Phase 3: Commands
 
 - [ ] **T11: `init` use case** (S)
-  - Acceptance: `init_workspace(workspace, memory, gitignore, ids, folder_name)` creates the empty config with `version: 1`, storage `localhost`/`7687`/namespace (sanitized folder name + `-` + `IdSource` suffix, ≤64 chars, `workspace` if empty), the workspace `INIT-MEMORY.md`, and the `.gitignore` entry; refuses if the config exists and changes nothing.
+  - Acceptance: `init_workspace(workspace, memory, gitignore, ids, root, folder_name)` (added beside the old `init`, which stays until T12) creates the empty config with `version: 1`, storage `localhost`/`7687`/namespace (sanitized folder name + `-` + `IdSource` suffix, ≤64 chars, `workspace` if empty), the workspace `INIT-MEMORY.md`, and the `.gitignore` entry; refuses if the config exists and changes nothing.
   - Verify: unit tests with fakes: refused when config exists (nothing written), namespace content, two suffixes give two namespaces, folder name with spaces/capitals/Unicode gives a valid namespace.
   - Files: `lib/engine/src/init.rs`, `workspace/config.rs`, `lib.rs`.
   - Depends on: T4, T6.
 
 - [ ] **T12: `workbench init` end to end** (M)
-  - Acceptance: `IdSource` adapter (std only); CLI `init [--out]` without `--platform`; prints what was created; `PlatformArg` removed; `output.rs` created with the `Error: <what>. <what to do>` formatter; exit codes 0/1 (clap gives 2).
-  - Verify: integration test: `init` in a temp dir creates `config.yml`, `memory/INIT-MEMORY.md` and the `.gitignore` line; a second run exits 1 with no changes; `--platform` now exits 2.
-  - Files: `lib/adapters/src/{id_source,lib}.rs`, `services/cli/src/{cli,main,output}.rs`, `services/cli/tests/cli.rs`.
+  - Acceptance: `IdSource` adapter (std only); CLI `init [--out]` without `--platform`; prints what was created; `PlatformArg` removed; `output.rs` created with the `Error: <what>. <what to do>` formatter; exit codes 0/1 (clap gives 2). Removes what the new `init` replaces: old `init`, `ConfigStore` and `DirFileStore` (`dir_file.rs`; `WorkspaceFile::create_empty` now creates `.workbench/`).
+  - Verify: integration test: `init` in a temp dir creates `config.yml`, `memory/INIT-MEMORY.md` and the `.gitignore` line; a second run exits 1 with no changes; `--platform` now exits 2; the written config loads back as an empty workspace.
+  - Files: `lib/adapters/src/{id_source,lib}.rs`, `lib/adapters/src/dir_file.rs` (deleted), `lib/engine/src/{init,ports,lib}.rs`, `services/cli/src/{cli,main,output}.rs`, `services/cli/tests/cli.rs`.
   - Depends on: T7, T8, T9, T11.
 
 - [ ] **T13: Workspace discovery and `project list`** (M)
   - Acceptance: `locate_workspace` searches upward for `.workbench/`; `--workspace <DIR>` overrides; not found prints `Error: no .workbench/ found from <cwd>. Run 'workbench init'.`; `list_projects` use case; `project list` prints `id  language  manager  path` per project and a hint when empty.
   - Verify: integration tests: works from a subdirectory; `--workspace` works; outside a workspace exits 1 with the exact message; empty list prints the hint.
-  - Files: `services/cli/src/{cli,main,output}.rs`, `lib/engine/src/workspace/mod.rs` (use case), `services/cli/tests/cli.rs`.
+  - Files: `services/cli/src/{cli,main,output}.rs`, `services/cli/src/utils/workspace.rs` (`locate_workspace`), `lib/engine/src/workspace/mod.rs` (use case), `services/cli/tests/cli.rs`.
   - Depends on: T7, T12.
 
 - [ ] **T14: `add_project` use case** (M)
-  - Acceptance: `add_project(request)` resolves/validates the path, uses given flags or the inspector, derives the id (or fails naming `--id`), applies defaults (`--venv`, `--activate`, `--compose`), stores the path relative to the workspace root, builds and validates against the config, then `MemoryStore::create` (seeded from `ContextSource`), then `save`. Any failure: config unchanged, `discard(created)` called, pre-existing files untouched. Ambiguous or undetectable fails naming the flag.
-  - Verify: unit tests with fakes: failure injected at each step leaves config and memory unchanged; duplicate id rejected; duplicate resolved path rejected; re-add finds existing memory files and keeps them; relative-path table tests (`../x`, under root, absolute fallback).
+  - Acceptance: `add_project(request)` takes the already-resolved absolute path; the directory and a given `--compose` file are checked through `ProjectInspector::inspect(path, compose)` (the engine does no I/O), which fails with `NotADirectory` or a `compose` error; uses given flags or the inspection, derives the id (or fails naming `--id`), applies defaults (`--venv`, `--activate`, `--compose`), stores the path relative to the workspace root, builds and validates against the config, then `MemoryStore::create` (seeded from `ContextSource`), then `save`. Any failure: config unchanged, `discard(created)` called, pre-existing files untouched. Ambiguous or undetectable fails naming the flag.
+  - Verify: unit tests with fakes: not-a-directory and missing `--compose` fail before anything is written; failure injected at each step leaves config and memory unchanged; duplicate id rejected; duplicate resolved path rejected; re-add finds existing memory files and keeps them; relative-path table tests (`../x`, under root, absolute fallback).
   - Files: `lib/engine/src/workspace/{add,paths,mod}.rs`, `lib.rs`.
-  - Depends on: T4, T6, T10.
+  - Depends on: T4, T6 (uses the inspector port; the adapter is T10).
 
 - [ ] **T15: `workbench project add` end to end** (M)
   - Acceptance: `project add <PATH> [--id --language --dependency-manager --venv --activate --compose]` (no `--index` in this slice; it is rejected as unknown with exit 2); enums via `LanguageArg`/`DependencyManagerArg`; prints what was created.

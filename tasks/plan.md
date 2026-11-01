@@ -19,11 +19,12 @@ Build the whole `workspace` module (model, validation, YAML store, memory layout
 
 1. **Engine stays free of `serde`.** The YAML adapter in `lib/adapters` owns serde DTOs (`deny_unknown_fields`) and maps them to engine types. Rationale: the workspace spec makes `adapters` the crate that depends on `serde` and `yaml_serde`, and unknown-key rejection is a parsing concern. Cost: one DTO layer.
 2. **Whole config model now, not just what Slice A edits.** `project add` must save a config that may hold hand-written `lsp`, `compose` and `semantic.llm` blocks without losing them, and workspace success criterion 2 requires the round trip. So the model carries every field.
-3. **`ConfigStore` is replaced by `WorkspaceStore`** (`load`, `save`, `create_empty`) and the old `init(store, platforms)` is rewritten; `--platform` and `PlatformArg` are removed from `init`. `engine::Platform` stays for `platform-setup`.
+3. **`ConfigStore` is replaced by `WorkspaceStore`** (`load`, `save`, `create_empty(&config)`) and the old `init(store, platforms)` is rewritten; `--platform` and `PlatformArg` are removed from `init`. `engine::Platform` stays for `platform-setup`. The new ports and `init_workspace` are added beside the old ones (T6, T11) so the build and `init --out ./tmp` keep working; T12 switches the CLI over and deletes `ConfigStore`, the old `init` and `DirFileStore` (`dir_file.rs`).
 4. **Randomness without a new dependency:** `IdSource` is implemented in `lib/adapters` from std (`RandomState`); the engine takes the port, tests inject a fixed suffix.
 5. **`pyproject.toml` detection without a TOML crate:** detect `[tool.uv]` / `[tool.poetry]` by matching trimmed header lines (`[tool.uv]`, `[tool.uv.…]`), reading files only. A `toml` dependency is ask-first and not approved. Ceiling: a header inside a multi-line string is a false positive; upgrade to a parser if it ever matters. Mark with a `ponytail:` comment.
 6. **Relative path storage:** `project add` stores the path relative to the workspace root (using `..`), or absolute when no relative form exists. The relative-path computation is a pure function in the engine over absolute, already-resolved paths; the CLI/adapter does the `canonicalize`.
-7. **Integration tests** use `env!("CARGO_BIN_EXE_workbench")` and `std::process::Command`, each in a fresh temp directory built from `std::env::temp_dir()` plus a unique name (no temp-dir crate, which is ask-first). A tiny helper in `tests/cli.rs` creates and removes it.
+7. **Integration tests** use `env!("CARGO_BIN_EXE_workbench")` and `std::process::Command`, each in a fresh temp directory built from `std::env::temp_dir()` plus a unique name (no temp-dir crate, which is ask-first). A tiny helper (a few lines) in `tests/cli.rs` creates and removes it; the adapter tests carry their own copy under `#[cfg(test)]` rather than adding a shared crate. The engine's recording fakes live in one `#[cfg(test)]` `testing` module created in T6.
+9. **The engine does no I/O, so `project add` checks the directory and a given `--compose` file through `ProjectInspector::inspect(path, compose)`.** `ContextSource` returns `SourceFile { name, content, truncated }`; the adapter cuts at 20 KB and the engine's seed builder adds the `[truncated at 20 KB]` marker.
 8. **`project remove --purge-memory`** prints what it will delete and then deletes (no prompt), as the spec says.
 
 ## Dependency graph
@@ -31,23 +32,23 @@ Build the whole `workspace` module (model, validation, YAML store, memory layout
 ```
 T1 adapters crate + move DirFileStore
  ├─ T2 ProjectId, Language, DependencyManager ── T3 Project, Environment, LSP merge ── T4 WorkspaceConfig + validation ── T5 Scope
- ├─ T6 memory layout + ports                   (needs T2)
+ ├─ T6 memory layout + ports                   (needs T2, T4)
  │
- ├─ T7 YAML WorkspaceStore adapter             (needs T4)
+ ├─ T7 YAML WorkspaceStore adapter             (needs T4, T6)
  ├─ T8 MemoryStore + ContextSource adapter     (needs T6)
- ├─ T9 GitignoreStore adapter                  (needs T1)
- └─ T10 ProjectInspector adapter               (needs T2)
+ ├─ T9 GitignoreStore adapter                  (needs T1, T6)
+ └─ T10 ProjectInspector adapter               (needs T2, T6)
 
 T11 init use case (engine)                     (needs T4, T6)
-T12 IdSource + `workbench init` end to end     (needs T7, T8, T9, T11)
+T12 IdSource + `workbench init` end to end     (needs T7, T8, T9, T11; removes old init, ConfigStore, DirFileStore)
 T13 discovery + `project list`                 (needs T7, T12)
-T14 add_project use case                       (needs T4, T6, T10)
+T14 add_project use case                       (needs T4, T6)
 T15 `project add` end to end                   (needs T13, T14, T8, T10)
 T16 `project remove` end to end                (needs T13, T8)
 T17 hardening and docs                         (needs all)
 ```
 
-Parallel where useful: T2–T6 (engine, pure) are independent of T9 and T10 once T2 exists. Everything else is sequential.
+Parallel where useful: T6 needs T4, so the engine chain T2 → T3 → T4 → T6 is sequential; T5 can run beside T6. Once T6 exists, T7–T10 are independent of each other. Everything else is sequential.
 
 ## Task index (details in `todo.md`)
 
@@ -98,7 +99,7 @@ One branch per phase off `develop`, one commit per task, one PR per phase refere
 | Relative-path computation edge cases (`..`, symlinks, different roots) | Med | Pure function with table tests; the adapter canonicalizes first; fall back to absolute |
 | `project add` rollback leaves partial state | High | Use case order is memory first, config last; `discard(created)` on failure; fake-port tests inject a failure at each step |
 | Hand-rolled temp dirs leak on test failure | Low | Unique names under the OS temp dir, removed in a drop guard |
-| Existing `init` callers/tests break when rewritten | Low | Only `main.rs` calls it; the old unit test is replaced by T11's tests |
+| Existing `init` callers/tests break when rewritten | Low | New ports and `init_workspace` land beside the old ones (T6, T11); T12 switches `main.rs` over and deletes the old code and its unit test in one task |
 
 ## Open questions
 

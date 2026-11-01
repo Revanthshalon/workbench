@@ -17,7 +17,7 @@ lib/engine/src/
     ├── add.rs  remove.rs
     └── memory.rs   templates and seed builder
 lib/adapters/src/
-├── lib.rs  dir_file.rs  workspace_file.rs  memory_dir.rs
+├── lib.rs  dir_file.rs (moved in T1, deleted in T12)  workspace_file.rs  memory_dir.rs
 ├── gitignore_file.rs  project_inspector.rs  id_source.rs
 services/cli/src/
 ├── main.rs  cli.rs  output.rs  utils/
@@ -124,13 +124,17 @@ pub trait MemoryStore {
     fn list_files(&self, id: &ProjectId) -> Result<Vec<PathBuf>, Error>; // for the --purge-memory preview
 }
 pub struct Created(Vec<PathBuf>);             // only files/folders this call made
+pub struct SourceFile { pub name: String, pub content: String, pub truncated: bool }
 pub trait ContextSource { fn read(&self, project: &Path) -> Result<Vec<SourceFile>, Error>; }
-pub trait ProjectInspector { fn inspect(&self, project: &Path) -> Result<Inspection, Error>; }
+/// Fails with `NotADirectory` when `project` is not a directory, and with `Invalid { field: "compose" }`
+/// when a given `compose` (relative to the project) does not exist. The engine does no I/O, so these
+/// checks live here.
+pub trait ProjectInspector { fn inspect(&self, project: &Path, compose: Option<&Path>) -> Result<Inspection, Error>; }
 pub trait GitignoreStore { fn ensure_ignored(&self, root: &Path, entry: &str) -> Result<bool, Error>; }
 pub trait IdSource { fn suffix(&self) -> String; }   // four lowercase hex chars
 ```
 
-`create_empty` takes the config so `init` decides the content (namespace, `storage` block) and the adapter only writes it. `list_files` is an addition to the spec's port table, needed to print what `--purge-memory` will delete (**LLD decision**). Ports take the workspace root at construction (`WorkspaceFile::new(root)`), as `DirFileStore::new(dir)` does today.
+`create_empty` takes the config so `init` decides the content (namespace, `storage` block) and the adapter only writes it (it also creates `.workbench/`, which is why `DirFileStore` goes away). `list_files` is an addition to the spec's port table, needed to print what `--purge-memory` will delete (**LLD decision**). Both changes are reflected in `SPEC-workspace.md`'s port table. The new ports are added beside `ConfigStore`; T12 removes `ConfigStore`, the old `init` and `DirFileStore` when the CLI is switched over. Ports take the workspace root at construction (`WorkspaceFile::new(root)`), as `DirFileStore::new(dir)` does today.
 
 `Inspection { language: Vec<Language>, python_managers: Vec<DependencyManager>, node_managers: Vec<DependencyManager>, venv: Option<PathBuf>, compose: Option<PathBuf> }` keeps *what was seen*; the use case decides ambiguity, so the rule lives in the engine.
 
@@ -154,8 +158,8 @@ Step 3 is first so a repeat run changes nothing. If 4 or 5 fail after 3, the con
 
 ```
 add_project(ws, memory, ctx, inspector, req)      req: path(abs, resolved), root, id?, language?, manager?, venv?, activate?, compose?
-  1. require is_dir(req.path)                              → NotADirectory
-  2. inspection = inspector.inspect(path)
+  1. inspection = inspector.inspect(path, req.compose)     → NotADirectory / compose does not exist (adapter checks; engine does no I/O)
+  2. (inspection is a read of files only)
   3. language, manager = given or decided from inspection  → Undetected{flag} when ambiguous/none
   4. id = req.id or ProjectId::derive(dir_name)            → InvalidProjectId
   5. defaults: venv (.venv if seen, Python), activate (uv run | poetry run | none), compose (given or seen)
@@ -166,7 +170,7 @@ add_project(ws, memory, ctx, inspector, req)      req: path(abs, resolved), root
  10. if let Err(e) = ws.save(&config) { memory.discard(&created); return Err(e) }
 ```
 
-Order is memory then config, so the only state a failure can leave is memory files, and `discard(created)` removes exactly the ones this run made; files left by an earlier `project remove` are not in `created` and stay. `--compose` is checked to exist in step 5 (spec: error when given to `project add`).
+Order is memory then config, so the only state a failure can leave is memory files, and `discard(created)` removes exactly the ones this run made; files left by an earlier `project remove` are not in `created` and stay. A given `--compose` that does not exist fails in step 1 through the inspector (spec: error when `project add` is given it).
 
 ### `list_projects` and `remove_project`
 
@@ -176,7 +180,7 @@ Order is memory then config, so the only state a failure can leave is memory fil
 
 - **`WorkspaceFile`** (`.workbench/config.yml`). DTOs mirror the YAML with `#[serde(deny_unknown_fields)]`; `Option` fields use `skip_serializing_if` so absent stays absent. `load` checks `version == 1`, converts DTO → engine types (parse-don't-validate constructors give the field-named errors), then calls `WorkspaceConfig::new`. A missing `path` surfaces as `Invalid { project, field: "path" }`, not a raw serde message (map the serde error text for `missing field` into it). `save` is **atomic** (**LLD decision**): write `config.yml.tmp` in the same directory, `fsync`, `rename` over the target, so a crash or full disk cannot leave a truncated config.
 - **`MemoryDir`**. `create` uses `create_new` per file so an existing file is never overwritten, and records only paths it made (including the folder if it made it). `discard` deletes recorded files, then the folder only if it is now empty and was recorded.
-- **`ContextSource`** (same struct). Reads `README.md`, `CLAUDE.md`, `AGENTS.md` at the project root if they exist and are regular files (symlinks followed, since the spec reads "files at the project root"; reading stays inside the project path); non-UTF-8 files are skipped; content is cut at 20 KB on a char boundary.
+- **`ContextSource`** (same struct). Reads `README.md`, `CLAUDE.md`, `AGENTS.md` at the project root if they exist and are regular files (symlinks followed, since the spec reads "files at the project root"; reading stays inside the project path); non-UTF-8 files are skipped; content is cut at 20 KB on a char boundary and `SourceFile::truncated` is set. The engine's seed builder adds the `[truncated at 20 KB]` line.
 - **`ProjectInspector`**. Existence checks for the files in the detection table; for `pyproject.toml`, a line scan for `[tool.uv]`, `[tool.uv.`, `[tool.poetry]`, `[tool.poetry.` after `trim()`, marked `// ponytail: header-line match, not a TOML parse; a header inside a multi-line string is a false positive`. Runs nothing and imports nothing from the project.
 - **`GitignoreStore`**. Reads the file; skips the append if a line equals `.workbench/` or `.workbench` after `trim()`; otherwise appends (adding a newline first when the file lacks one); creates the file if missing. Returns whether it changed anything.
 - **`IdSource`**. Four hex digits from `std::hash::RandomState::new().build_hasher().finish()`, which is seeded from the OS.
@@ -205,7 +209,7 @@ Order is memory then config, so the only state a failure can leave is memory fil
 | Adapter | `lib/adapters` `#[cfg(test)]` with unique dirs under `std::env::temp_dir()` and a drop guard | YAML round trip equals model; unknown key/version; `MemoryDir` never overwrites and `discard` removes only created; detection fixtures; `.gitignore` cases |
 | Integration | `services/cli/tests/cli.rs` via `CARGO_BIN_EXE_workbench` | sequences `init → project add → list → remove`; exit codes (0, 1, 2); the exact `no .workbench/ found` text; subdirectory discovery; `--workspace` |
 
-Fakes live in a `testing` module compiled only for tests; each fake records calls so rollback tests assert `discard` received exactly the created paths.
+Fakes live in one `testing` module in the engine compiled only for tests (created in T6); each fake records calls so rollback tests assert `discard` received exactly the created paths.
 
 ## 10. Sequence: `project add ../shared/web --id web`
 
