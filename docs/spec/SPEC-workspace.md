@@ -15,7 +15,7 @@ Module `workspace` from the [capability map](capability-map.md). Status: **appro
 9. *(Amendment, from `SPEC-core.md`)* The config also holds the storage settings, under `storage`, because `developer-support` and the CLI need storage without the server config. Workbench has one storage, Memgraph, running on the person's own machine. Its password is referenced by environment variable name, never stored. The meaning of each setting is defined in `SPEC-storage.md`. Every field is optional and has a default; `workbench init` writes the block out in full so the settings are visible.
 10. *(Amendment, from `SPEC-storage.md`)* Docker Compose files feed the overview of how projects connect (in each view, from that checkout's own files). They normally live inside each project, so a project can name its Compose file; a Compose file that spans projects (for example one at the repository root) is listed at the top level of the config. The workspace also has its own `INIT-MEMORY.md`, where a person writes down how the services fit together; it is read as context and is not parsed into links.
 11. *(Readiness fixes)* Loading checks **structure only**; whether a project's `path` exists is checked by the commands that read the project (`index`, `watch`, `lsp`, `mcp`), so `project list` and `project remove` still work when a directory has moved or been deleted. Unknown keys in `config.yml` are rejected. "Loads and saves unchanged" means the *model* is equal after a round trip: comments and key order are not kept, and defaults are not written back for fields that were absent.
-12. *(Amendment: language, framework and binaries)* One project entry covers everything in a repository. It may list its **binaries**, each a `name` and an `entry` file, written by hand in the config and never detected (detection would need `pyproject.toml` and `angular.json` parsers; see ADR-0002 and the roadmap). Binaries are metadata only: they do not get their own memory folder, annotations or Compose mapping, and `project add` has no flag for them. Design: `docs/superpowers/specs/2026-11-02-project-language-framework-binaries-design.md`.
+12. *(Amendment: language, framework and binaries)* One project entry covers everything in a repository. It may list its **binaries**, each a `name` and an `entry` file, written by hand in the config and never detected (detection would need `pyproject.toml` and `angular.json` parsers; see ADR-0002 and the roadmap). Binaries are metadata only: they do not get their own memory folder, annotations or Compose mapping, and `project add` has no flag for them. Design: [`language-framework-binaries.md`](language-framework-binaries.md).
 
 ## Objective
 
@@ -142,7 +142,7 @@ Every module that queries projects takes a scope: all projects (the default) or 
 - Rust 2024, workspace at `Cargo.toml`.
 - `serde` and `yaml_serde` (already workspace dependencies) for the config file.
 - `thiserror` for errors (already used).
-- No new dependencies are needed for the model. A temp-directory crate for adapter tests is an ask-first item (see Boundaries). `secrecy` is used by the storage adapter, not here: this module holds only environment variable names.
+- No new dependencies are needed for the model. `tempfile` is approved as a dev-dependency for adapter tests (see Boundaries). `secrecy` is used by the storage adapter, not here: this module holds only environment variable names.
 - New workspace member `lib/adapters` (package `adapters`), depending on `engine`, `serde` and `yaml_serde`; `services/cli` (the `workbench` binary, which includes the MCP server) depends on it.
 
 ## Commands
@@ -228,7 +228,7 @@ Conventions follow the existing code: one error enum in `error.rs`, doc comments
 
 - **Always:** validate structure on load and on save (existence of project paths is checked only by commands that use them); resolve relative paths against the workspace root and accept absolute ones; return errors that name the project id and the field.
 - **Ask first:**
-  - Adding a dependency (for example a temp-directory crate for adapter tests).
+  - Adding a dependency other than `tempfile` as a dev-dependency for tests.
   - Changing the config's `version` or removing a field.
 - **Never:** overwrite a person's `INIT-MEMORY.md`; store secrets in the workspace config (they belong in a context config file; the LLM key and the Memgraph password are referenced by environment variable name only); read or write outside `.workbench/` and the project paths.
 

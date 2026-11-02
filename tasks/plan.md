@@ -19,12 +19,12 @@ Greenfield build. Nothing exists yet except the root `Cargo.toml` (workspace mem
 ## Architecture decisions
 
 1. **Engine stays free of `serde`** ([ADR-0001](../docs/adr/0001-engine-free-of-serde.md)). The YAML adapter owns serde DTOs (`deny_unknown_fields`) and maps them to engine types. Cost: one DTO layer.
-2. **Whole config model from the start, not just what Slice A edits.** `project add` must save a config that may hold hand-written `lsp`, `compose` and `semantic.llm` blocks without losing them, and workspace success criterion 2 requires the round trip. So the model carries every field, including `framework` and hand-written `binaries` (never detected, so no new parser; see the [design](../docs/superpowers/specs/2026-11-02-project-language-framework-binaries-design.md)).
+2. **Whole config model from the start, not just what Slice A edits.** `project add` must save a config that may hold hand-written `lsp`, `compose` and `semantic.llm` blocks without losing them, and workspace success criterion 2 requires the round trip. So the model carries every field, including `framework` and hand-written `binaries` (never detected, so no new parser; see the [design](../docs/spec/language-framework-binaries.md)).
 3. **Randomness without a new dependency:** `IdSource` is implemented in `lib/adapters` from std (`RandomState`); the engine takes the port, tests inject a fixed suffix.
 4. **`pyproject.toml` detection without a TOML crate** ([ADR-0002](../docs/adr/0002-no-toml-crate-for-pyproject.md)): match trimmed `[tool.uv…]` / `[tool.poetry…]` header lines. Mark with a `ponytail:` comment.
 5. **Relative path storage:** `project add` stores the path relative to the workspace root (using `..`), or absolute when no relative form exists. The computation is a pure function in the engine over absolute, already-resolved paths; the CLI canonicalizes first.
 6. **The engine does no I/O, so `project add` checks the directory and a given `--compose` file through `ProjectInspector::inspect(path, compose)`.** `ContextSource` returns `SourceFile { name, content, truncated }`; the adapter cuts at 20 KB and the engine's seed builder adds the `[truncated at 20 KB]` marker.
-7. **Integration tests** use `env!("CARGO_BIN_EXE_workbench")` and `std::process::Command`, each in a fresh directory built from `std::env::temp_dir()` plus a unique name (no temp-dir crate, which is ask-first). A helper of a few lines in `tests/cli.rs` creates and removes it; the adapter tests carry their own copy under `#[cfg(test)]`. The engine's recording fakes live in one `#[cfg(test)]` `testing` module created in T6.
+7. **Integration tests** use `env!("CARGO_BIN_EXE_workbench")` and `std::process::Command`, each in a `tempfile::TempDir` (`tempfile` is an approved dev-dependency; added by the first task that needs it, T7 for adapters and T12 for the CLI, each running `cargo deny check`). The engine's recording fakes live in one `#[cfg(test)]` `testing` module created in T6.
 8. **`project remove --purge-memory`** prints what it will delete and then deletes (no prompt), as the spec says.
 
 ## Dependency graph
@@ -97,8 +97,8 @@ One branch per phase off `develop`, one commit per task, one PR per phase refere
 | `[tool.uv]` text match misdetects | Low | Fixture tests for uv, poetry, both, neither; documented ceiling; fails safe (ambiguous names the flag) |
 | Relative-path computation edge cases (`..`, symlinks, different roots) | Med | Pure function with table tests; the CLI canonicalizes first; fall back to absolute |
 | `project add` rollback leaves partial state | High | Use case order is memory first, config last; `discard(created)` on failure; fake-port tests inject a failure at each step |
-| Hand-rolled temp dirs leak on test failure | Low | Unique names under the OS temp dir, removed in a drop guard |
+| `tempfile`'s licences or transitive dependencies fail `deny.toml` | Low | Dev-dependency only; T7 runs `cargo deny check` and adds any exception, with a reason, as a reviewed change |
 
 ## Open questions
 
-None blocking. Decisions 4 (no TOML crate) and 7 (no temp-dir crate) are to confirm at plan review. If you would rather approve `toml` and `tempfile`, T10 and T12 get simpler and ADR-0002 is superseded.
+None. Decided: no TOML crate for now (ADR-0002), `tempfile` as a dev-dependency only, Memgraph as the only storage (ADR-0003).

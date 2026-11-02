@@ -47,7 +47,7 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
 ## Phase 2: Adapters
 
 - [ ] **T7: YAML workspace store** (M)
-  - Acceptance: `WorkspaceFile` implements `WorkspaceStore`: `load` (serde DTOs, `deny_unknown_fields`, maps to the engine model, validates), `save` (atomic: temp file, `fsync`, rename), `create_empty`; a config whose project path does not exist still loads; missing `path` fails with a clear error naming the project. `create_empty` creates `.workbench/` and writes the given config, failing with `AlreadyExists` if `config.yml` exists. Adapter tests use a small temp-dir helper with a drop guard (`#[cfg(test)]`, a few lines; no crate).
+  - Acceptance: `WorkspaceFile` implements `WorkspaceStore`: `load` (serde DTOs, `deny_unknown_fields`, maps to the engine model, validates), `save` (atomic: temp file, `fsync`, rename), `create_empty`; a config whose project path does not exist still loads; missing `path` fails with a clear error naming the project. `create_empty` creates `.workbench/` and writes the given config, failing with `AlreadyExists` if `config.yml` exists. Adds `tempfile` as a dev-dependency of `adapters` (pinned version; run `cargo deny check`); adapter tests use `tempfile::TempDir`.
   - Verify: adapter tests: round trip with a config holding `lsp`, `compose`, `storage`, `semantic.llm` and two projects gives an equal model; unknown key rejected; unknown version rejected; `create_empty` twice fails the second time.
   - Files: `lib/adapters/src/{workspace_file,lib}.rs`.
   - Depends on: T4, T6.
@@ -82,7 +82,7 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
   - Depends on: T4, T6.
 
 - [ ] **T12: `workbench init` end to end** (M)
-  - Acceptance: CLI `init [--out]` (no `--platform`); prints what was created; `output.rs` with the `Error: <what>. <what to do>` formatter; exit codes 0/1 (clap gives 2); the integration-test harness (temp-dir helper) in `tests/cli.rs`.
+  - Acceptance: CLI `init [--out]` (no `--platform`); prints what was created; `output.rs` with the `Error: <what>. <what to do>` formatter; exit codes 0/1 (clap gives 2); the integration-test harness in `tests/cli.rs`, using `tempfile::TempDir` (dev-dependency of `workbench`).
   - Verify: integration test: `init` in a temp dir creates `config.yml`, `memory/INIT-MEMORY.md` and the `.gitignore` line; a second run exits 1 with no changes; `--platform` exits 2; the written config loads back as an empty workspace.
   - Files: `services/cli/src/{cli,main,output}.rs`, `services/cli/tests/cli.rs`.
   - Depends on: T1, T7, T8, T9, T11.

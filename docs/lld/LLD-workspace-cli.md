@@ -24,7 +24,7 @@ services/cli/src/
 services/cli/tests/cli.rs
 ```
 
-Dependencies: `engine` → `thiserror`. `adapters` → `engine`, `serde`, `yaml_serde`. `workbench` → `engine`, `adapters`, `clap`. No new crates.
+Dependencies: `engine` → `thiserror`. `adapters` → `engine`, `serde`, `yaml_serde`. `workbench` → `engine`, `adapters`, `clap`. Dev-dependency only: `tempfile` (adapters and workbench tests).
 
 ## 2. Engine types
 
@@ -211,7 +211,7 @@ Order is memory then config, so the only state a failure can leave is memory fil
 | Level | Where | Covers |
 |---|---|---|
 | Engine unit | beside code, fake ports (`Fake*` structs in `#[cfg(test)]`) | every row of the Project rules table; id/namespace derivation; LSP merge; scope; `relative_to`; use-case rollback with a failure injected at each step |
-| Adapter | `lib/adapters` `#[cfg(test)]` with unique dirs under `std::env::temp_dir()` and a drop guard | YAML round trip equals model; unknown key/version; `MemoryDir` never overwrites and `discard` removes only created; detection fixtures; `.gitignore` cases |
+| Adapter | `lib/adapters` `#[cfg(test)]` with `tempfile::TempDir` | YAML round trip equals model; unknown key/version; `MemoryDir` never overwrites and `discard` removes only created; detection fixtures; `.gitignore` cases |
 | Integration | `services/cli/tests/cli.rs` via `CARGO_BIN_EXE_workbench` | sequences `init → project add → list → remove`; exit codes (0, 1, 2); the exact `no .workbench/ found` text; subdirectory discovery; `--workspace` |
 
 Fakes live in one `testing` module in the engine compiled only for tests (created in T6); each fake records calls so rollback tests assert `discard` received exactly the created paths.

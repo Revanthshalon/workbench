@@ -1,6 +1,6 @@
 # Design: project `language`, `framework` and `binaries`
 
-Status: **applied** to the capability map, `SPEC-workspace`, `SPEC-cli`, `SPEC-storage`, the HLD, the LLD and `tasks/` (2026-11-02). After this the specs are the source of truth. Changes the approved [`SPEC-workspace`](../../spec/SPEC-workspace.md) and Slice A of [`SPEC-cli`](../../spec/SPEC-cli.md). Once approved, the specs, [LLD](../../lld/LLD-workspace-cli.md) and [`tasks/todo.md`](../../../tasks/todo.md) are updated to match; this document is not the source of truth after that.
+Status: **applied** to the capability map, `SPEC-workspace`, `SPEC-cli`, `SPEC-storage`, the HLD, the LLD and `tasks/` (2026-11-02). After this the specs are the source of truth. Changes the approved [`SPEC-workspace`](SPEC-workspace.md) and Slice A of [`SPEC-cli`](SPEC-cli.md). Once approved, the specs, [LLD](../lld/LLD-workspace-cli.md) and [`tasks/todo.md`](../../tasks/todo.md) are updated to match; this document is not the source of truth after that.
 
 ## Intent
 
