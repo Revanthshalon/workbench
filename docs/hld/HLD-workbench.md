@@ -107,7 +107,7 @@ Build order: `workspace → cli, core → contexts, storage, lsp → audit → g
 |---|---|
 | Memgraph must be running; default mode will not start without it | Clear start-up error with the `docker run` hint; `storage status` |
 | Workspace spans several repos and branches | Per-view graphs, per-project groups, worktrees per context |
-| Specs not on `develop`: drafts of `index`, `graph`, `semantic-layer`, `lsp`, `operations`, `data`, `audit`, `execution-flow`, `flow-memory`, `incidents` and `agent-prompts` sit on unmerged `docs/spec-*` branches; `platform-setup` and `dev-support` are not written | Built in order; each draft is rebased onto `develop` (language/framework change) and reviewed before its build starts |
+| Specs not written: `platform-setup` and `dev-support` | Written and approved before their milestone starts ([roadmap](../roadmap.md)) |
 | Dependencies not yet in `Cargo.toml` (`notify`, `reqwest`) and `deny.toml` allows only MIT, Apache-2.0, Unicode-3.0 | Added by the task that first uses them, with a reviewed licence exception if needed |
 
 ## 9. Related documents

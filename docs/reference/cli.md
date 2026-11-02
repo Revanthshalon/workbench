@@ -16,12 +16,12 @@ Status is the build milestone from the [roadmap](../roadmap.md): M1 is planned i
 | `workbench mcp start \| serve \| stop \| restart \| status \| logs \| connect` | Run and manage the MCP server | `SPEC-core` | M2 |
 | `workbench context check` | Check a context's connections | `SPEC-cli`, `SPEC-contexts` | M5 |
 | `workbench context sync` | Create or move a context's branch worktrees | `SPEC-cli`, `SPEC-contexts` | M5 |
-| `workbench index` | Build and update the AST data | `SPEC-cli`, `SPEC-index` (draft) | M5 |
-| `workbench watch [start] \| stop \| status \| logs \| flush` | Keep the index fresh | `SPEC-cli`, `SPEC-index` (draft) | M5 |
-| `workbench semantic add \| revise \| retract \| prune \| generate \| list \| show` | Annotations on AST nodes | `SPEC-cli`, `SPEC-semantic-layer` (draft) | M6 |
+| `workbench index` | Build and update the AST data | `SPEC-cli`, `SPEC-index` | M5 |
+| `workbench watch [start] \| stop \| status \| logs \| flush` | Keep the index fresh | `SPEC-cli`, `SPEC-index` | M5 |
+| `workbench semantic add \| revise \| retract \| prune \| generate \| list \| show` | Annotations on AST nodes | `SPEC-cli`, `SPEC-semantic-layer` | M6 |
 | `workbench platform setup` | Configure an AI platform's LSP integration | `SPEC-platform-setup` (not written) | M4 |
 | `workbench platform hooks install \| uninstall \| list` | Install platform hooks for `watch` | `SPEC-platform-setup` (not written) | M4 |
-| `workbench lsp run <project-id>` | Launch a project's language server over stdio | `SPEC-lsp` (draft) | M3 |
+| `workbench lsp run \| list \| check` | Launch a project's language server over stdio; list and check the servers | `SPEC-lsp` | M3 |
 
 ## Common behaviour
 
@@ -112,13 +112,14 @@ All take `--workspace <DIR>` and, where a mode applies, `--mode <MODE>`: `develo
 ## `index` (M5)
 
 ```
-workbench index [--project <ID>]... [--changed | --full] [--annotate]
+workbench index [--project <ID>]... [--changed | --full] [--wait <SECONDS>] [--annotate]
 ```
 
 | Option | Meaning |
 |---|---|
 | `--project <ID>` | Limit to a project; repeatable. Unknown id fails and lists known ids |
-| `--changed` | Only files git reports as changed (falls back to hashes outside git) |
+| `--changed` | Only files git reports as changed since the commit last indexed, plus uncommitted, untracked and previously failed files (behaves like the default run outside git or before the first index) |
+| `--wait <SECONDS>` | How long to wait for another indexing run to finish (default 60) before failing |
 | `--full` | Re-parse everything. With `--changed`: exit `2` |
 | `--annotate` | Then ask the configured LLM to draft annotations for new or changed nodes without one. Needs `semantic.llm` |
 
@@ -158,7 +159,9 @@ Person-written annotations are mirrored to `.workbench/memory/<project-id>/annot
 |---|---|
 | `platform setup [--platform P[,P...]]` | Configure the AI platform's own LSP integration from the workspace config. Default platforms `copilot-cli,claude-code`. Never installs hooks |
 | `platform hooks install \| uninstall \| list [--platform P[,P...]]` | Install, remove or show the platform hooks that run `watch` at session start, `watch flush` after an edit, `watch stop` at session end. Only when asked |
-| `lsp run <project-id>` | Run the project's activation command and exec its language server over stdio. Used by platform LSP config |
+| `lsp run <project-id> [--kind KIND] [--view working\|context:NAME]` | Start the server for that project and kind (default: the project's main kind) and hand over stdin and stdout, so an AI platform can use it as its LSP server. Exits with the server's exit code |
+| `lsp list` | For every project, each file kind with its server, command, activation and whether the program was found. Read-only |
+| `lsp check [<project-id>]` | Start each enabled server, run the handshake, shut it down; report `ok`, `failed` or `not found` with the time taken. Read-only |
 
 ## Not planned yet (roadmap)
 
