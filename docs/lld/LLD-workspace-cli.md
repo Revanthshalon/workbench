@@ -9,7 +9,7 @@ lib/engine/src/
 ├── lib.rs  error.rs  ports.rs  init.rs  testing.rs (test fakes)
 └── workspace/
     ├── mod.rs      re-exports and the use cases: list_projects, add_project, remove_project
-    ├── project.rs  ProjectId, Language, DependencyManager, Project, Environment
+    ├── project.rs  ProjectId, Language, Framework, DependencyManager, Binary, Project, Environment
     ├── lsp.rs      LspSettings, Value, effective settings
     ├── config.rs   WorkspaceConfig, StorageSettings, Namespace, EnvVarName, ComposeFile, SemanticLlm
     ├── scope.rs    ProjectScope
@@ -37,21 +37,27 @@ impl ProjectId {
     pub fn derive(dir_name: &str) -> Result<Self, Error>;
 }
 
-pub enum Language { Python, Angular }
+pub enum Language { Python, TypeScript }
+/// Optional framework metadata; never selects a parser.
+pub enum Framework { Angular }          // valid only with Language::TypeScript
 pub enum DependencyManager { Poetry, Uv, Npm, Pnpm, Yarn, Bun }
 impl DependencyManager {
-    pub fn supports(self, language: Language) -> bool;   // poetry|uv: Python; others: Angular
+    pub fn supports(self, language: Language) -> bool;   // poetry|uv: Python; others: TypeScript
 }
 
 pub struct Project {
     pub id: ProjectId,
     pub path: PathBuf,                    // as stored: relative to the root, or absolute
     pub language: Language,
+    pub framework: Option<Framework>,
     pub dependency_manager: DependencyManager,
+    pub binaries: Vec<Binary>,            // hand-written; empty when absent
     pub compose: Option<PathBuf>,
     pub environment: Option<Environment>,
     pub lsp: Option<LspSettings>,
 }
+/// A runnable thing inside a project. `name` follows the `ProjectId` grammar (own newtype `BinaryName`).
+pub struct Binary { pub name: BinaryName, pub entry: PathBuf }   // entry: relative, non-empty, never checked on disk
 pub struct Environment { pub venv: Option<PathBuf>, pub activate: Option<String> }
 
 pub struct WorkspaceConfig {            // fields private; built by `WorkspaceConfig::new(parts)?`
@@ -70,7 +76,7 @@ impl WorkspaceConfig {
 }
 ```
 
-`new` is the single validation point (spec "Project rules"): version is checked by the adapter (it is not part of the model), the rest by `new`. A removed project that a `compose[].services` entry still names makes `without_project` fail with a hint to edit the config (**LLD decision**: silently dropping a person's mapping is worse).
+`new` is the single validation point (spec "Project rules"), including: `framework` only with `TypeScript`, `venv` only with `Python`, binary names unique within a project, binary `entry` relative and non-empty: version is checked by the adapter (it is not part of the model), the rest by `new`. A removed project that a `compose[].services` entry still names makes `without_project` fail with a hint to edit the config (**LLD decision**: silently dropping a person's mapping is worse).
 
 **Storage keeps absence.** The spec says defaults are not written back, so the model stores what was written:
 
@@ -136,7 +142,7 @@ pub trait IdSource { fn suffix(&self) -> String; }   // four lowercase hex chars
 
 `create_empty` takes the config so `init` decides the content (namespace, `storage` block) and the adapter only writes it (it also creates `.workbench/`). `list_files` is an addition to the spec's port table, needed to print what `--purge-memory` will delete (**LLD decision**). Both changes are reflected in `SPEC-workspace.md`'s port table. Ports take the workspace root at construction (`WorkspaceFile::new(root)`).
 
-`Inspection { language: Vec<Language>, python_managers: Vec<DependencyManager>, node_managers: Vec<DependencyManager>, venv: Option<PathBuf>, compose: Option<PathBuf> }` keeps *what was seen*; the use case decides ambiguity, so the rule lives in the engine.
+`Inspection { language: Vec<Language>, framework: Option<Framework>, python_managers: Vec<DependencyManager>, node_managers: Vec<DependencyManager>, venv: Option<PathBuf>, compose: Option<PathBuf> }` keeps *what was seen*; the use case decides ambiguity, so the rule lives in the engine.
 
 ## 5. Use cases
 
@@ -157,9 +163,9 @@ Step 3 is first so a repeat run changes nothing. If 4 or 5 fail after 3, the con
 ### `add_project`
 
 ```
-add_project(ws, memory, ctx, inspector, req)      req: path(abs, resolved), root, id?, language?, manager?, venv?, activate?, compose?
+add_project(ws, memory, ctx, inspector, req)      req: path(abs, resolved), root, id?, language?, framework?, manager?, venv?, activate?, compose?
   1. inspection = inspector.inspect(path, req.compose)     → NotADirectory / compose does not exist (adapter checks; engine does no I/O)
-  2. language, manager = given or decided from inspection  → Undetected{flag} when ambiguous/none
+  2. language, framework, manager = given or decided from inspection  → Undetected{flag} when ambiguous/none; framework without TypeScript → Invalid
   3. id = req.id or ProjectId::derive(dir_name)            → InvalidProjectId
   4. defaults: venv (.venv if seen, Python), activate (uv run | poetry run | none), compose (given or seen)
   5. stored_path = relative_to(root, path) or absolute
@@ -173,7 +179,7 @@ Order is memory then config, so the only state a failure can leave is memory fil
 
 ### `list_projects` and `remove_project`
 
-`list_projects(ws) -> Vec<ProjectRow>` (id, language, manager, stored path). `remove_project(ws, memory, id, purge)`: load, `without_project`, save; with `purge`, return the file list first (`list_files`) for the CLI to print, then `memory.remove`. Config is saved before the purge so a failed delete leaves a valid workspace. It never reads project paths, so it works when a directory is gone.
+`list_projects(ws) -> Vec<ProjectRow>` (id, language and framework, manager, stored path). `remove_project(ws, memory, id, purge)`: load, `without_project`, save; with `purge`, return the file list first (`list_files`) for the CLI to print, then `memory.remove`. Config is saved before the purge so a failed delete leaves a valid workspace. It never reads project paths, so it works when a directory is gone.
 
 ## 6. Adapters
 
@@ -196,7 +202,7 @@ Order is memory then config, so the only state a failure can leave is memory fil
 
 ## 8. CLI
 
-`cli.rs`: `Cli { workspace: Option<PathBuf>, command }`, `Command::{Init{out}, Project(ProjectCommand)}`, `ProjectCommand::{Add(AddArgs), List, Remove{id, purge_memory}}`. Enums via `LanguageArg` and `DependencyManagerArg` with `From` into the engine types. `--workspace` is `global = true`. `init` has no `--platform` and `--index` is not defined, so clap rejects it with exit 2.
+`cli.rs`: `Cli { workspace: Option<PathBuf>, command }`, `Command::{Init{out}, Project(ProjectCommand)}`, `ProjectCommand::{Add(AddArgs), List, Remove{id, purge_memory}}`. Enums via `LanguageArg`, `FrameworkArg` and `DependencyManagerArg` with `From` into the engine types. `--workspace` is `global = true`. `init` has no `--platform` and `--index` is not defined, so clap rejects it with exit 2.
 
 `output.rs`: pure functions from reports to `String` (`init_report`, `project_rows`, `purge_preview`), so formatting is unit-tested without a process. `main.rs` stays wiring: parse, locate workspace, build adapters, call the use case, print, map `Err` to `Error: {e}` and exit 1. Progress/diagnostics to stderr, results to stdout. Row format for `project list` follows the spec snippet: tab-separated `id language manager path`; the empty hint goes to stdout.
 

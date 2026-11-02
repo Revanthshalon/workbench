@@ -19,7 +19,7 @@ Greenfield build. Nothing exists yet except the root `Cargo.toml` (workspace mem
 ## Architecture decisions
 
 1. **Engine stays free of `serde`** ([ADR-0001](../docs/adr/0001-engine-free-of-serde.md)). The YAML adapter owns serde DTOs (`deny_unknown_fields`) and maps them to engine types. Cost: one DTO layer.
-2. **Whole config model from the start, not just what Slice A edits.** `project add` must save a config that may hold hand-written `lsp`, `compose` and `semantic.llm` blocks without losing them, and workspace success criterion 2 requires the round trip. So the model carries every field.
+2. **Whole config model from the start, not just what Slice A edits.** `project add` must save a config that may hold hand-written `lsp`, `compose` and `semantic.llm` blocks without losing them, and workspace success criterion 2 requires the round trip. So the model carries every field, including `framework` and hand-written `binaries` (never detected, so no new parser; see the [design](../docs/superpowers/specs/2026-11-02-project-language-framework-binaries-design.md)).
 3. **Randomness without a new dependency:** `IdSource` is implemented in `lib/adapters` from std (`RandomState`); the engine takes the port, tests inject a fixed suffix.
 4. **`pyproject.toml` detection without a TOML crate** ([ADR-0002](../docs/adr/0002-no-toml-crate-for-pyproject.md)): match trimmed `[tool.uv…]` / `[tool.poetry…]` header lines. Mark with a `ponytail:` comment.
 5. **Relative path storage:** `project add` stores the path relative to the workspace root (using `..`), or absolute when no relative form exists. The computation is a pure function in the engine over absolute, already-resolved paths; the CLI canonicalizes first.

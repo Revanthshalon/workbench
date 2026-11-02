@@ -6,15 +6,16 @@ Module `workspace` from the [capability map](capability-map.md). Status: **appro
 
 1. The workspace root is the directory that contains `.workbench/`. A relative project path is resolved against it.
 2. A project does not have to sit under the root. The configured path is the source of truth: it can be relative to the root (`../other-repo`) or absolute, because a workspace can span several repos.
-3. `language` is the project's main language: `python` or `angular`. YAML, Dockerfile and Docker Compose files are file types found *inside* projects, not project languages.
-4. The new config replaces today's empty `config.yml`. `workbench init` now writes `version: 1`, a `storage` block (`host: localhost`, `port: 7687` and a unique `namespace`) and `projects: []`. Adding projects is a separate command, specified in `SPEC-cli.md`.
+3. `language` is the project's main language: `python` or `typescript`. A framework is separate, optional metadata (`framework: angular`, on `typescript` only); parsing is by language, never by framework. YAML, Dockerfile and Docker Compose files are file types found *inside* projects, not project languages.
+4. `workbench init` writes `version: 1`, a `storage` block (`host: localhost`, `port: 7687` and a unique `namespace`) and `projects: []`. Adding projects is a separate command, specified in `SPEC-cli.md`.
 5. This module owns the *model, validation, storage ports and memory layout*. The commands that add projects live in `SPEC-cli.md`.
-6. The file adapters (YAML config, memory folders, the existing `.workbench/` directory store) live in a new shared crate, `lib/adapters`, because both the CLI and the MCP server (`workbench mcp`) read the config.
+6. The file adapters (YAML config, memory folders) live in a shared crate, `lib/adapters`, because both the CLI and the MCP server (`workbench mcp`) read the config.
 7. The config carries `version: 1` so later changes can migrate old files.
 8. *(Amendment)* The config can hold the settings for LLM-assisted semantic annotation, under `semantic.llm`. The supported providers are `copilot-cli`, `ollama` and `claude`. The settings are not secrets: provider, model, optional endpoint and, for `claude`, the *name* of the environment variable that holds the API key. The key itself is never stored in the config, not even inline.
 9. *(Amendment, from `SPEC-core.md`)* The config also holds the storage settings, under `storage`, because `developer-support` and the CLI need storage without the server config. Workbench has one storage, Memgraph, running on the person's own machine. Its password is referenced by environment variable name, never stored. The meaning of each setting is defined in `SPEC-storage.md`. Every field is optional and has a default; `workbench init` writes the block out in full so the settings are visible.
 10. *(Amendment, from `SPEC-storage.md`)* Docker Compose files feed the overview of how projects connect (in each view, from that checkout's own files). They normally live inside each project, so a project can name its Compose file; a Compose file that spans projects (for example one at the repository root) is listed at the top level of the config. The workspace also has its own `INIT-MEMORY.md`, where a person writes down how the services fit together; it is read as context and is not parsed into links.
 11. *(Readiness fixes)* Loading checks **structure only**; whether a project's `path` exists is checked by the commands that read the project (`index`, `watch`, `lsp`, `mcp`), so `project list` and `project remove` still work when a directory has moved or been deleted. Unknown keys in `config.yml` are rejected. "Loads and saves unchanged" means the *model* is equal after a round trip: comments and key order are not kept, and defaults are not written back for fields that were absent.
+12. *(Amendment: language, framework and binaries)* One project entry covers everything in a repository. It may list its **binaries**, each a `name` and an `entry` file, written by hand in the config and never detected (detection would need `pyproject.toml` and `angular.json` parsers; see ADR-0002 and the roadmap). Binaries are metadata only: they do not get their own memory folder, annotations or Compose mapping, and `project add` has no flag for them. Design: `docs/superpowers/specs/2026-11-02-project-language-framework-binaries-design.md`.
 
 ## Objective
 
@@ -54,7 +55,12 @@ projects:
   - id: billing-api            # stable, kebab-case, unique
     path: services/billing     # relative to the workspace root
     language: python
-    dependency_manager: uv     # python: poetry | uv; angular: npm | pnpm | yarn | bun
+    dependency_manager: uv     # python: poetry | uv; typescript: npm | pnpm | yarn | bun
+    binaries:                  # optional; hand-written, never detected
+      - name: api
+        entry: src/billing/api.py     # relative to the project
+      - name: worker
+        entry: src/billing/worker.py
     compose: docker-compose.yml  # optional; path inside the project. Default: the first of compose.yaml,
                                  # compose.yml, docker-compose.yaml, docker-compose.yml at the project root
     environment:               # optional; how to activate the project's environment
@@ -68,8 +74,14 @@ projects:
         python.analysis.typeCheckingMode: standard
   - id: web-app
     path: ../shared/web        # may sit outside the workspace root
-    language: angular
+    language: typescript
+    framework: angular         # optional; angular only for now
     dependency_manager: pnpm
+    binaries:
+      - name: admin
+        entry: projects/admin/src/main.ts
+      - name: shop
+        entry: projects/shop/src/main.ts
 ```
 
 ### Project rules
@@ -79,9 +91,13 @@ projects:
 | `id` | Required. Lowercase letters, digits and `-`; starts with a letter; 1 to 64 characters; unique. Never changes once the memory folder exists. A default id derived from a directory name (used by `project add`) is lowercased, every other character becomes `-`, runs of `-` collapse, leading and trailing `-` are trimmed, and it is cut to 64 characters; if the result does not start with a letter it is invalid and the caller fails with a hint to pass an id. |
 | `version` | Required. Must be `1`; any other value is an error that names the supported version. |
 | `path` | Required. Relative to the workspace root, or absolute; need not be under the root. Two projects may not have the same path once resolved (nesting is allowed). Not checked for existence on load; a command that reads the project fails naming the project and path if it is not a directory. |
-| `language` | Required. `python` or `angular`. |
-| `dependency_manager` | Required. `poetry` or `uv` for Python; `npm`, `pnpm`, `yarn` or `bun` for Angular (Vite is the build tool, not recorded here). A mismatched pair is an error. |
-| `environment.venv` | Optional, Python only (an error on an Angular project). Relative to the project path. |
+| `language` | Required. `python` or `typescript`. |
+| `framework` | Optional. `angular`, valid only with `typescript` (an error with `python`). Vite is Angular's build tool, not recorded here. |
+| `dependency_manager` | Required. `poetry` or `uv` for `python`; `npm`, `pnpm`, `yarn` or `bun` for `typescript`. A mismatched pair is an error. |
+| `binaries` | Optional list. Names are unique within the project; an empty list is the same as absent. |
+| `binaries[].name` | Required. Same grammar as a project id (lowercase letters, digits and `-`; starts with a letter; 1 to 64 characters). A duplicate within the project is an error naming the project and the name. |
+| `binaries[].entry` | Required. A non-empty path relative to the project directory; an absolute path is an error. Stored as written and not checked for existence, on load or by any command in this slice. |
+| `environment.venv` | Optional, Python only (an error on a `typescript` project). Relative to the project path. |
 | `environment.activate` | Optional. A command prefix used to launch tools in the project (for example `uv run` or `poetry run`), including the project's language server. |
 | `compose` (project) | Optional. A path relative to the project, or absolute. If absent, the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` at the project root is used, and having none is fine. A listed path that does not exist is an error when `project add` is given it or a command reads it, not on load. |
 | top-level `compose[].path` | Optional list of Compose files that span projects. Relative to the workspace root, or absolute. Must exist when a command reads it (not on load). Listing the same path twice is an error. |
@@ -90,7 +106,7 @@ projects:
 | `lsp.server` | Optional. The server name. Syntax is checked here; the name is checked against the catalog by the `lsp` module. |
 | `lsp.command` | Optional. Overrides the catalog's launch command (program and arguments). It runs through `environment.activate` when that is set. |
 | `lsp.settings` | Optional. A free-form map passed to the server unchanged; the workspace does not interpret it. |
-| top-level `lsp.<language>` | Optional. The same fields (`enabled`, `server`, `command`, `settings`) as workspace-wide defaults for every project of that language. The key is `python` or `angular` (the project languages); any other key is an error until `SPEC-lsp.md` says otherwise. |
+| top-level `lsp.<language>` | Optional. The same fields (`enabled`, `server`, `command`, `settings`) as workspace-wide defaults for every project of that language. The key is `python` or `typescript` (the project languages; a framework is not a key); any other key is an error until `SPEC-lsp.md` says otherwise. Choosing an Angular language server for `framework: angular` is decided in `SPEC-lsp.md`. |
 | `storage.host` | Optional, default `localhost`. Non-empty, no whitespace. Memgraph runs on the person's own machine; a shared server is not supported. |
 | `storage.port` | Optional, default `7687`. 1 to 65535. |
 | `storage.username` | Optional. Memgraph has no login unless one is set up. |
@@ -145,7 +161,7 @@ Try it:  cargo run -p workbench -- init --out ./tmp
 lib/engine/src/
 ├── workspace/
 │   ├── mod.rs          # re-exports
-│   ├── project.rs      # Project, ProjectId, Language, DependencyManager, Environment
+│   ├── project.rs      # Project, ProjectId, Language, Framework, DependencyManager, Binary, BinaryName, Environment
 │   ├── lsp.rs          # LspSettings, per-language defaults and the precedence merge
 │   ├── config.rs       # WorkspaceConfig (version, projects) and its validation
 │   ├── scope.rs        # ProjectScope and resolution
@@ -154,7 +170,6 @@ lib/engine/src/
 
 lib/adapters/src/        # shared driven adapters (new crate)
 ├── lib.rs
-├── dir_file.rs         # moved from services/cli first; removed once workspace_file.rs creates .workbench/
 ├── workspace_file.rs   # YAML adapter for WorkspaceStore (.workbench/config.yml)
 └── memory_dir.rs       # filesystem adapter for MemoryStore and ContextSource
 ```
@@ -196,10 +211,10 @@ Conventions follow the existing code: one error enum in `error.rs`, doc comments
 ## Testing Strategy
 
 - **Framework:** built-in `cargo test`, no extra harness.
-- **Engine unit tests** (next to the code, with fake stores like the existing `init` test):
+- **Engine unit tests** (next to the code, with fake stores):
   - LSP precedence: project over workspace default, a partial override keeps the other fields, `enabled: false` is respected.
   - `ProjectId` accepts and rejects the right strings.
-  - Duplicate ids, mismatched language and dependency manager, an unknown version, an unknown key, duplicate resolved paths, a duplicate top-level Compose path, `venv` on an Angular project, a bad port, a bad namespace and a bad environment variable name are rejected.
+  - Duplicate ids, mismatched language and dependency manager, an unknown version, an unknown key, duplicate resolved paths, a duplicate top-level Compose path, `venv` on a `typescript` project, `framework: angular` on a `python` project, a duplicate binary name within a project, an absolute or empty binary `entry`, a bad port, a bad namespace and a bad environment variable name are rejected.
   - A config whose project `path` does not exist still loads, and `list` and `remove` work on it.
   - Default id derivation: `Billing_API` gives `billing-api`; `3d-viewer` and `___` are invalid with a hint; a long name is cut to 64 characters.
   - Scope resolution: all, a subset, an unknown id.
@@ -220,7 +235,7 @@ Conventions follow the existing code: one error enum in `error.rs`, doc comments
 ## Success Criteria
 
 1. `workbench init` writes a `config.yml` that loads back as an empty, valid workspace (`version: 1`, a `storage` block, no projects) and an empty workspace-level `.workbench/memory/INIT-MEMORY.md`.
-2. A config with two valid projects, including `lsp` blocks, `compose` entries, a `storage` block and a `semantic.llm` block, loads, validates and saves with an equal model (comments, key order and absent defaults are not preserved).
+2. A config with two valid projects, including `lsp` blocks, `compose` entries, a `framework`, `binaries`, a `storage` block and a `semantic.llm` block, loads, validates and saves with an equal model (comments, key order and absent defaults are not preserved).
 3. Each rule in the "Project rules" table is rejected with an error that names the project and field when broken.
 4. Adding a project creates `.workbench/memory/<id>/INIT-MEMORY.md`, seeded from existing context, and an empty `annotations.yml`, and a second add never overwrites either.
 5. The effective LSP settings of a project resolve by the precedence rule (project over workspace default over catalog), field by field.

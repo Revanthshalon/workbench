@@ -17,13 +17,14 @@ Depends on [`workspace`](SPEC-workspace.md) (approved) and, for the `mcp` comman
 ## Further decisions
 
 1. Commands other than `init` find the workspace by searching upward from the current directory for a `.workbench/` directory, like git does. `--workspace <DIR>` overrides the search.
-2. `init` keeps `--out <DIR>` (default: the current directory) to choose where `.workbench/` is created. It no longer takes `--platform`: platform setup is its own command, `workbench platform setup`, specified in `SPEC-platform-setup.md`, and reads the workspace config that `init` creates.
-3. `project add` detects language and dependency manager from files in the project, and asks for flags when it cannot decide.
+2. `init` takes `--out <DIR>` (default: the current directory) to choose where `.workbench/` is created. It does not take `--platform`: platform setup is its own command, `workbench platform setup`, specified in `SPEC-platform-setup.md`, and reads the workspace config that `init` creates.
+3. `project add` detects language, framework and dependency manager from files in the project, and asks for flags when it cannot decide.
 4. `project remove` removes the project from the config and keeps its memory folder, because the folder may contain notes written by a person.
 5. Output is plain text for people. There is no `--json` yet.
 6. Commands that act on a node select it with separate flags: `--project <ID>` (the whole project), plus `--file <PATH>` (a file, relative to the project root; needs `--project`), plus `--symbol <NAME>` (a class or function by qualified name, such as `StripeGateway.charge`; needs `--file`). The target of a `link` uses `--to-project`, `--to-file` and `--to-symbol` the same way, or names a custom node with `--to-custom <NAME>` (lowercase letters, digits and `.`, `_`, `:`, `-`; starts with a letter or digit; at most 64 characters, for example `kafka:orders` or `shared-postgres`). The first link to a custom name creates that node in each graph the link names; later links reuse it. A custom node stands for something no project's code defines (a shared database, a queue, a third-party API) and exists in a view only while a link there points at it.
 7. Annotation kinds are `purpose`, `role`, `domain-term`, `tag` and `link`; `SPEC-semantic-layer.md` defines them precisely.
 8. LLM-assisted annotation is opt-in twice over: the workspace config must contain `semantic.llm` (`SPEC-workspace.md`), **and** the command must be given the flag. The supported providers are `copilot-cli`, `ollama` and `claude`. Only `claude` needs an API key; it is read from the environment variable named in `api_key_env`, only when a call is made, and is never stored in any config file.
+9. *(Amendment: language, framework and binaries)* A project's `language` is `python` or `typescript`; `angular` is an optional `framework` of a `typescript` project (`SPEC-workspace.md`, decision 12). A project may list its binaries, but only by hand in `config.yml`: `project add` neither detects them nor takes a flag for them.
 
 ## Objective
 
@@ -32,7 +33,7 @@ Let one person set up and maintain a workspace from the terminal in a few comman
 ```text
 workbench init                                   # create .workbench/ here
 workbench project add services/billing           # detect python + uv, create its memory
-workbench project add ../shared/web --id web     # detect angular + pnpm
+workbench project add ../shared/web --id web     # detect typescript + angular + pnpm
 workbench project list
 workbench index                                  # parse changed files in every project
 workbench semantic add --project billing-api --file src/payments/gateway.py \
@@ -72,16 +73,17 @@ Also defined in `SPEC-platform-setup.md`. A separate command, run only when aske
 | Option | Meaning |
 |---|---|
 | `--id <ID>` | Project id. Default: derived from the directory name by the rule in `SPEC-workspace.md`; if the result is not a valid id (for example `3d-viewer`), the command fails and names `--id`. |
-| `--language <python\|angular>` | Default: detected. |
+| `--language <python\|typescript>` | Default: detected. |
+| `--framework <angular>` | Only with `typescript`; rejected with `python`. Default: detected (`angular.json`). |
 | `--dependency-manager <poetry\|uv\|npm\|pnpm\|yarn\|bun>` | Default: detected. |
 | `--venv <PATH>` | Python only. Default: `.venv` if it exists in the project. |
-| `--activate <COMMAND>` | Command prefix to launch tools in the project. Default: derived from the dependency manager (`uv run`, `poetry run`), none for Angular. |
+| `--activate <COMMAND>` | Command prefix to launch tools in the project. Default: derived from the dependency manager (`uv run`, `poetry run`), none for `typescript`. |
 | `--compose <PATH>` | The project's Docker Compose file, relative to the project. Default: the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` at the project root, if any. |
 | `--index` | Index the new project right after adding it (same as running `workbench index --project <id>`). A failed index does not undo the add. |
 
 Steps, all or nothing:
 1. Resolve and validate the path (exists, is a directory). It is resolved against the current directory, then stored relative to the workspace root (with `..` where needed), or absolute if no relative form exists, as `SPEC-workspace.md` requires.
-2. Detect language and dependency manager, unless given.
+2. Detect language, framework and dependency manager, unless given.
 3. Build the project and validate it against the workspace rules (unique id, valid pair, and so on).
 4. Create `.workbench/memory/<id>/INIT-MEMORY.md`, seeded as in `SPEC-workspace.md`, and an empty `annotations.yml` beside it. A file that already exists (the folder is kept by `project remove`) is left untouched, never overwritten.
 5. Save the config.
@@ -92,17 +94,17 @@ If any step fails, the config is left as it was and the memory files this run cr
 
 | Signal | Result |
 |---|---|
-| `angular.json` present | language `angular` |
+| `angular.json` present | language `typescript`, framework `angular` |
 | `pyproject.toml` present | language `python` |
 | `uv.lock` or a `[tool.uv]` table | dependency manager `uv` |
 | `poetry.lock` or a `[tool.poetry]` table | dependency manager `poetry` |
 | `pnpm-lock.yaml`, `yarn.lock`, `package-lock.json`, `bun.lock` or `bun.lockb` | `pnpm`, `yarn`, `npm`, `bun` |
 
-Both languages detected, both Python managers detected, or none detected: the command fails and names the flag to pass.
+Both languages detected, both Python managers detected, or none detected: the command fails and names the flag to pass. A `typescript` project without `angular.json` is not detected as such: pass `--language typescript` (and `--dependency-manager` if its lock file is missing).
 
 ### `workbench project list`
 
-Prints one line per project: id, language, dependency manager, path. Prints a short hint when there are none.
+Prints one line per project: id, language (written `typescript/angular` when a framework is set), dependency manager, path. Prints a short hint when there are none.
 
 ### `workbench project remove <ID>`
 
@@ -263,7 +265,7 @@ lib/adapters/src/         # + project_inspector.rs, gitignore_file.rs, server_co
 
 | Port | Responsibility |
 |---|---|
-| `ProjectInspector` | `inspect(path)` returns what is detectable: language, dependency manager, venv. Reads files only. |
+| `ProjectInspector` | `inspect(path, compose)` fails with `NotADirectory` when `path` is not a directory and with an `Invalid` error naming `compose` when a given Compose file does not exist; otherwise returns what is detectable: language, framework, dependency manager, venv, Compose file. Reads files only. |
 | `GitignoreStore` | `ensure_ignored(root, entry)` appends the entry once, creating the file if missing. |
 | `ServerConfigStore` | `create_template(root)` writes the server config and the context config templates under `.workbench/mcp/`, never overwriting. |
 
@@ -291,12 +293,12 @@ fn run(cli: Cli) -> Result<(), engine::Error> {
 }
 ```
 
-Follow the existing conventions: doc comments on every public item, no `unwrap` or `panic`, a `Platform`-style mapping type (`PlatformArg`) for every enum clap needs to parse.
+Follow the existing conventions: doc comments on every public item, no `unwrap` or `panic`, a mapping type (`LanguageArg`, `FrameworkArg`, `DependencyManagerArg`) for every enum clap needs to parse.
 
 ## Testing Strategy
 
 - **Engine unit tests** with fake ports: `add_project` rolls back on failure, a duplicate id is rejected, `remove_project` keeps memory by default, `init` is refused when a config exists, and the config it writes holds the `storage` block (`localhost`, `7687`, a unique namespace).
-- **Adapter tests** (in `lib/adapters`): detection against fixture directories (uv, poetry, angular with each lock file, ambiguous, empty); `.gitignore` handling (missing file, existing entry, existing file without a trailing newline).
+- **Adapter tests** (in `lib/adapters`): detection against fixture directories (uv, poetry, `typescript` + `angular` with each lock file, ambiguous, empty); `.gitignore` handling (missing file, existing entry, existing file without a trailing newline).
 - **Integration tests** (`services/cli/tests/cli.rs`): run the real binary in a temp directory through the sequence `init`, `project add`, `list`, `remove`, and check the files and exit codes.
 - **LLM drafting and prune:** with a fake `LlmClient` port: no call is made without the flag, without `semantic.llm`, or with `--dry-run`; the missing-variable error names the variable; a person-written annotation is never overwritten; `prune --dry-run` removes nothing; `prune` without `--yes` asks first and refuses to run non-interactively; `prune` removes exactly the stale and orphaned entries it listed.
 - **Watcher:** with a fake file-event source: a burst of events becomes one index run; ignored paths trigger nothing; `watch` twice runs one watcher; `flush` returns only after pending changes are indexed and works when no watcher runs; `stop` finishes the batch in progress; the index lock makes a concurrent `index` wait. An integration test starts the real watcher in a temp workspace, edits a file, runs `flush`, and checks the index changed.
@@ -313,7 +315,7 @@ Follow the existing conventions: doc comments on every public item, no `unwrap` 
 ## Success Criteria
 
 1. `workbench init` creates `.workbench/config.yml` and a `.gitignore` entry, and a second run fails with no changes.
-2. `project add` on a uv project, a poetry project and an Angular project (each package manager) detects correctly and creates the memory folder with `INIT-MEMORY.md` and an empty `annotations.yml`.
+2. `project add` on a uv project, a poetry project and an Angular project (`typescript` + `angular`, each package manager) detects correctly and creates the memory folder with `INIT-MEMORY.md` and an empty `annotations.yml`.
 3. An ambiguous or undetectable project fails and names the flag to pass.
 4. A failure in any step of `project add` leaves the config and memory unchanged.
 5. `project list` and `project remove` behave as described, and `remove` keeps the memory folder unless `--purge-memory` is given.

@@ -12,19 +12,19 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
   - Depends on: none.
 
 - [ ] **T2: Project identifiers and enums** (S)
-  - Acceptance: `ProjectId` (`FromStr`, the spec's rules) and `ProjectId::derive(dir_name)` (lowercase, other chars to `-`, collapse, trim, cut to 64, invalid if no leading letter); `Language`, `DependencyManager`, and the valid-pair check; new `Error` variants name the id/field.
-  - Verify: unit tests: accepted/rejected ids; `Billing_API` gives `billing-api`; `3d-viewer` and `___` invalid; long name cut to 64; each language/manager pair.
+  - Acceptance: `ProjectId` (`FromStr`, the spec's rules) and `ProjectId::derive(dir_name)` (lowercase, other chars to `-`, collapse, trim, cut to 64, invalid if no leading letter); `Language` (`python`, `typescript`), `Framework` (`angular`), `DependencyManager`, the valid language/manager pair check and the framework/language check (`angular` only with `typescript`); `BinaryName` (same grammar as `ProjectId`); new `Error` variants name the id/field.
+  - Verify: unit tests: accepted/rejected ids; `Billing_API` gives `billing-api`; `3d-viewer` and `___` invalid; long name cut to 64; each language/manager pair; `angular` with `python` rejected; `BinaryName` accepts and rejects like an id.
   - Files: `lib/engine/src/workspace/{mod,project}.rs`, `error.rs`, `lib.rs`.
   - Depends on: none (T1 not required).
 
 - [ ] **T3: Project, environment and LSP precedence** (M)
-  - Acceptance: `Project` (id, path, language, manager, optional compose, optional `Environment { venv, activate }` with `venv` rejected for Angular, optional `LspSettings`); `LspSettings` with field-by-field merge (project over workspace default over catalog; `settings` replaced as a whole), an engine `Value` enum for `settings`, `enabled: false` respected. (The `WorkspaceConfig::effective_lsp` lookup is in T4.)
-  - Verify: unit tests: partial override keeps other fields; `enabled: false`; venv on Angular rejected.
+  - Acceptance: `Project` (id, path, language, optional framework, manager, optional `binaries` as `Binary { name, entry }`, optional compose, optional `Environment { venv, activate }` with `venv` rejected for `typescript`, optional `LspSettings`); `LspSettings` with field-by-field merge (project over workspace default over catalog; `settings` replaced as a whole), an engine `Value` enum for `settings`, `enabled: false` respected. (The `WorkspaceConfig::effective_lsp` lookup is in T4.)
+  - Verify: unit tests: partial override keeps other fields; `enabled: false`; venv on a `typescript` project rejected.
   - Files: `lib/engine/src/workspace/{project,lsp,mod}.rs`.
   - Depends on: T2.
 
 - [ ] **T4: Workspace config and validation** (M)
-  - Acceptance: `WorkspaceConfig` (version, `lsp.<language>` for `python|angular`, `Storage` with defaults and validation, top-level `compose`, `semantic.llm`, projects). `new`/`validate` rejects: version ≠ 1, duplicate ids, duplicate resolved paths (nesting allowed), duplicate top-level compose path, unknown project id in `compose[].services`, bad port, bad namespace, bad env var names, `semantic.llm` rule violations (provider, model, endpoint: rejected for `copilot-cli`, `api_key_env`), `lsp.server` (non-empty, no whitespace) and `lsp.command` (non-empty, no empty element). `effective_lsp(&id)` returns the merged settings (project over workspace default). Errors name project and field. Structure only; no filesystem access.
+  - Acceptance: `WorkspaceConfig` (version, `lsp.<language>` for `python|typescript`, `Storage` with defaults and validation, top-level `compose`, `semantic.llm`, projects). `new`/`validate` rejects: version ≠ 1, duplicate ids, duplicate resolved paths (nesting allowed), duplicate top-level compose path, unknown project id in `compose[].services`, bad port, bad namespace, bad env var names, `semantic.llm` rule violations (provider, model, endpoint: rejected for `copilot-cli`, `api_key_env`), `framework` with a language other than `typescript`, a duplicate binary name within a project, a binary `entry` that is empty or absolute, `lsp.server` (non-empty, no whitespace) and `lsp.command` (non-empty, no empty element). `effective_lsp(&id)` returns the merged settings (project over workspace default). Errors name project and field. Structure only; no filesystem access.
   - Verify: unit tests, one per row of the spec's "Project rules" table; `effective_lsp` with and without a workspace default.
   - Files: `lib/engine/src/workspace/{config,mod}.rs`, `error.rs`.
   - Depends on: T3.
@@ -65,8 +65,8 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
   - Depends on: T6.
 
 - [ ] **T10: Project inspector adapter** (M)
-  - Acceptance: `inspect(path, compose)` fails with `NotADirectory` when `path` is not a directory and with `Invalid { field: "compose" }` when a given `compose` (relative to the project) does not exist; otherwise per the detection table (angular.json, pyproject.toml, `uv.lock`/`[tool.uv]`, `poetry.lock`/`[tool.poetry]`, `pnpm-lock.yaml`, `yarn.lock`, `package-lock.json`, `bun.lock`, `bun.lockb`) and `.venv`; returns what is detectable (language/manager may be absent or ambiguous); reads files only, runs nothing. `ponytail:` comment on the header-line match for `[tool.*]`.
-  - Verify: fixture-directory tests: uv, poetry, angular with each lock file, both languages, both Python managers, empty; file instead of directory; missing and present `compose`.
+  - Acceptance: `inspect(path, compose)` fails with `NotADirectory` when `path` is not a directory and with `Invalid { field: "compose" }` when a given `compose` (relative to the project) does not exist; otherwise per the detection table (angular.json → `typescript` + `angular`, pyproject.toml, `uv.lock`/`[tool.uv]`, `poetry.lock`/`[tool.poetry]`, `pnpm-lock.yaml`, `yarn.lock`, `package-lock.json`, `bun.lock`, `bun.lockb`) and `.venv`; returns what is detectable (language, framework, manager; language/manager may be absent or ambiguous); reads files only, runs nothing. `ponytail:` comment on the header-line match for `[tool.*]`.
+  - Verify: fixture-directory tests: uv, poetry, `typescript` + `angular` with each lock file, both languages, both Python managers, empty; file instead of directory; missing and present `compose`.
   - Files: `lib/adapters/src/{project_inspector,lib}.rs`.
   - Depends on: T2, T6.
 
@@ -88,20 +88,20 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
   - Depends on: T1, T7, T8, T9, T11.
 
 - [ ] **T13: Workspace discovery and `project list`** (M)
-  - Acceptance: `locate_workspace` searches upward for `.workbench/`; `--workspace <DIR>` overrides; not found prints `Error: no .workbench/ found from <cwd>. Run 'workbench init'.`; `list_projects` use case; `project list` prints `id  language  manager  path` per project and a hint when empty.
+  - Acceptance: `locate_workspace` searches upward for `.workbench/`; `--workspace <DIR>` overrides; not found prints `Error: no .workbench/ found from <cwd>. Run 'workbench init'.`; `list_projects` use case; `project list` prints `id  language  manager  path` per project (language written `typescript/angular` when a framework is set) and a hint when empty.
   - Verify: integration tests: works from a subdirectory; `--workspace` works; outside a workspace exits 1 with the exact message; empty list prints the hint.
   - Files: `services/cli/src/{cli,main,output}.rs`, `services/cli/src/utils/workspace.rs` (`locate_workspace`), `lib/engine/src/workspace/mod.rs` (use case), `services/cli/tests/cli.rs`.
   - Depends on: T7, T12.
 
 - [ ] **T14: `add_project` use case** (M)
-  - Acceptance: `add_project(request)` takes the already-resolved absolute path; the directory and a given `--compose` file are checked through `ProjectInspector::inspect(path, compose)` (the engine does no I/O), which fails with `NotADirectory` or a `compose` error; uses given flags or the inspection, derives the id (or fails naming `--id`), applies defaults (`--venv`, `--activate`, `--compose`), stores the path relative to the workspace root, builds and validates against the config, then `MemoryStore::create` (seeded from `ContextSource`), then `save`. Any failure: config unchanged, `discard(created)` called, pre-existing files untouched. Ambiguous or undetectable fails naming the flag.
+  - Acceptance: `add_project(request)` takes the already-resolved absolute path; the directory and a given `--compose` file are checked through `ProjectInspector::inspect(path, compose)` (the engine does no I/O), which fails with `NotADirectory` or a `compose` error; uses given flags or the inspection (language, framework, manager), derives the id (or fails naming `--id`), applies defaults (`--venv`, `--activate`, `--compose`), stores the path relative to the workspace root, builds and validates against the config, then `MemoryStore::create` (seeded from `ContextSource`), then `save`. Any failure: config unchanged, `discard(created)` called, pre-existing files untouched. Ambiguous or undetectable fails naming the flag.
   - Verify: unit tests with fakes: not-a-directory and missing `--compose` fail before anything is written; failure injected at each step leaves config and memory unchanged; duplicate id rejected; duplicate resolved path rejected; re-add finds existing memory files and keeps them; relative-path table tests (`../x`, under root, absolute fallback).
   - Files: `lib/engine/src/workspace/{add,paths,mod}.rs`, `lib.rs`.
   - Depends on: T4, T6 (uses the inspector port; the adapter is T10).
 
 - [ ] **T15: `workbench project add` end to end** (M)
-  - Acceptance: `project add <PATH> [--id --language --dependency-manager --venv --activate --compose]` (no `--index` in this slice; it is rejected as unknown with exit 2); enums via `LanguageArg`/`DependencyManagerArg`; prints what was created.
-  - Verify: integration tests: uv, poetry and Angular (npm, pnpm, yarn, bun) projects detect correctly and create `INIT-MEMORY.md` plus an empty `annotations.yml`; ambiguous and undetectable fail naming the flag; failure leaves config and memory unchanged.
+  - Acceptance: `project add <PATH> [--id --language --framework --dependency-manager --venv --activate --compose]` (no `--index` in this slice; it is rejected as unknown with exit 2); enums via `LanguageArg`/`FrameworkArg`/`DependencyManagerArg`; no flag for binaries; prints what was created.
+  - Verify: integration tests: uv, poetry and Angular (`typescript` + `angular`; npm, pnpm, yarn, bun) projects detect correctly; `--framework angular` with `--language python` exits 1 naming the field and create `INIT-MEMORY.md` plus an empty `annotations.yml`; ambiguous and undetectable fail naming the flag; failure leaves config and memory unchanged.
   - Files: `services/cli/src/{cli,main,output}.rs`, `services/cli/tests/cli.rs`, fixtures under `services/cli/tests/`.
   - Depends on: T13, T14, T8, T10.
 
@@ -117,9 +117,9 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
 ## Phase 4: Finish
 
 - [ ] **T17: Hardening and docs** (S)
-  - Acceptance: every row of the detection table and every message in "Common behaviour" has a test; every row of the workspace "Project rules" table has a test; `--help` works on every command and the banner shows on top-level help only; `README.md` and `services/cli/README.md` updated (no `--platform` on `init`, new commands); empty `Makefile` left alone.
+  - Acceptance: every row of the detection table and every message in "Common behaviour" has a test; every row of the workspace "Project rules" table has a test, including `framework` and `binaries`; a config with `binaries` survives `project add` and `remove` unchanged; `--help` works on every command and the banner shows on top-level help only; `README.md`, `services/cli/README.md` and `lib/engine/README.md` updated (no `--platform` on `init`, new commands, `WorkspaceStore` instead of `ConfigStore`); empty `Makefile` left alone.
   - Verify: standing checks; `cargo run -p workbench -- --help` and `project add --help`.
-  - Files: `services/cli/tests/cli.rs`, `README.md`, `services/cli/README.md`.
+  - Files: `services/cli/tests/cli.rs`, `README.md`, `services/cli/README.md`, `lib/engine/README.md`.
   - Depends on: T1–T16.
 
 ### Checkpoint D: done
