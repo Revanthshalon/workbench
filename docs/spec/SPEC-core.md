@@ -139,8 +139,8 @@ There are three kinds. **No tool changes an observed system** (a running environ
 Conventions every module follows:
 - Tools that query projects take an optional `projects` list (project ids); omitted means all projects (`SPEC-workspace.md`).
 - Success returns structured JSON plus a short text summary. Failure is returned as a tool error with an actionable message, not a protocol error.
-- No tool output contains a secret. Secrets are `Secret<T>` values and have no `Display` and no `Serialize`.
-- Prompts are registered the same way, from `agent-prompts` only.
+- No tool output contains a secret. Secrets are `Secret` values and have no `Display` and no `Serialize`.
+- Prompts are registered the same way, by the module that owns them (`agent-prompts`, and `dev-support` for the code-change prompts).
 
 ### Server config: the envelope
 
@@ -213,11 +213,11 @@ lib/engine/src/server/
 ├── mode.rs        # Mode, ModeSpec: which modules a mode registers, whether it needs the server config
 ├── registry.rs    # ToolSpec, ToolKind, PromptSpec, Registry (refuses tools without a kind)
 ├── session.rs     # SessionId, ToolContext, call hook trait
-├── secret.rs      # Secret<T> over secrecy: redacted Debug, no Display, no Serialize
+├── secret.rs      # Secret over secrecy: redacted Debug, no Display, no Serialize
 ├── config.rs      # ServerConfig envelope, ConfigSection trait, ConfigReport (all problems)
 └── env.rs         # secret-reference resolution (`X` inline or `X_env`) over an EnvSource port, no std::env here
 
-lib/engine/src/ports.rs      # + ServerConfigSource, EnvSource
+lib/engine/src/ports.rs      # + ServerConfigSource (load, and `create_template` for `workbench init`), EnvSource
 lib/adapters/src/            # + server_config_file.rs (YAML + template), env_process.rs (std::env)
 
 services/cli/src/mcp/         # the MCP server: a module of the `workbench` crate (no separate crate)

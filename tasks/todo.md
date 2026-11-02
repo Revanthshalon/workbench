@@ -6,9 +6,9 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
 ## Phase 1: Foundation
 
 - [ ] **T1: Workspace scaffold** (S)
-  - Acceptance: root `Cargo.toml` lists members `lib/*` and `services/cli` and workspace dependency `adapters`; crates `engine` (`lib/engine`, depends on `thiserror`), `adapters` (`lib/adapters`, depends on `engine`, `serde`, `yaml_serde`) and `workbench` (`services/cli`, depends on `engine`, `adapters`, `clap`), each inheriting the workspace lints; engine has `Error` (`AlreadyExists`, `Storage`) and empty `workspace` module; the binary parses `--help` and exits 0.
+  - Acceptance: root `Cargo.toml` lists members `lib/*` and `services/cli` and workspace dependency `adapters`; crates `engine` (`lib/engine`, depends on `thiserror`), `adapters` (`lib/adapters`, depends on `engine`, `serde`, `yaml_serde`) and `workbench` (`services/cli`, depends on `engine`, `adapters`, `clap`), each inheriting the workspace lints; engine has `Error` (`AlreadyExists`, `Storage`) and empty `workspace` module; the binary parses `--help` and exits 0. The old scaffold is removed in this task: `lib/engine/src/{domain,init,ports}.rs` (`Platform`, `ConfigStore`, the old `init`), `services/cli/src/adapters/` (`DirFileStore`), and the old `Init { platform, out }` clap command with `PlatformArg`.
   - Verify: standing checks; `cargo run -p workbench -- --help` prints help.
-  - Files: `Cargo.toml`, `lib/engine/{Cargo.toml,src/{lib,error}.rs}`, `lib/adapters/{Cargo.toml,src/lib.rs}`, `services/cli/{Cargo.toml,src/main.rs}`.
+  - Files: `Cargo.toml`, `lib/engine/{Cargo.toml,src/{lib,error}.rs}` (and the deletions above), `lib/adapters/{Cargo.toml,src/lib.rs}`, `services/cli/{Cargo.toml,src/main.rs}`.
   - Depends on: none.
 
 - [ ] **T2: Project identifiers and enums** (S)
@@ -36,7 +36,7 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
   - Depends on: T4.
 
 - [ ] **T6: Memory layout and ports** (M)
-  - Acceptance: project and workspace `INIT-MEMORY.md` templates (fixed headings); `SourceFile { name, content, truncated }`; seed builder (headings + "Existing context" quoting each source under its name, adding `[truncated at 20 KB]` after a source whose `truncated` is set); ports `WorkspaceStore` (`create_empty(&config)`), `MemoryStore` (`create`→`Created`, `create_workspace`, `discard`, `remove`, `list_files`), `ContextSource`, `IdSource`, `GitignoreStore`, `ProjectInspector` (`inspect(project, compose)`) the `#[cfg(test)]` `testing` module with recording fakes for these ports.
+  - Acceptance: project and workspace `INIT-MEMORY.md` templates (fixed headings); `SourceFile { name, content, truncated }`; seed builder (headings + "Existing context" quoting each source under its name, adding `[truncated at 20 KB]` after a source whose `truncated` is set); ports `WorkspaceStore` (`create_empty(&config)`), `MemoryStore` (`create`→`Created`, `create_workspace`, `discard`, `remove`, `list_files`), `ProjectContextSource`, `IdSource`, `GitignoreStore`, `ProjectInspector` (`inspect(project, compose)`) the `#[cfg(test)]` `testing` module with recording fakes for these ports.
   - Verify: unit tests: sources found, none found, truncated source gets the marker.
   - Files: `lib/engine/src/workspace/memory.rs`, `ports.rs`, `lib.rs`, `lib/engine/src/testing.rs`.
   - Depends on: T2, T4.
@@ -53,7 +53,7 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
   - Depends on: T4, T6.
 
 - [ ] **T8: Memory and context adapters** (S)
-  - Acceptance: `MemoryDir` implements `MemoryStore` (creates folder, `INIT-MEMORY.md`, empty `annotations.yml`; never overwrites; returns what it created; `discard` removes exactly those; `remove` deletes the folder) and `ContextSource` (reads `README.md`, `CLAUDE.md`, `AGENTS.md` that exist, skips non-UTF-8, cuts at 20 KB on a char boundary and sets `SourceFile::truncated`).
+  - Acceptance: `MemoryDir` implements `MemoryStore` (creates folder, `INIT-MEMORY.md`, empty `annotations.yml`; never overwrites; returns what it created; `discard` removes exactly those; `remove` deletes the folder) and `ProjectContextSource` (reads `README.md`, `CLAUDE.md`, `AGENTS.md` that exist, skips non-UTF-8, cuts at 20 KB on a char boundary and sets `SourceFile::truncated`).
   - Verify: adapter tests: existing copies of both files untouched; `discard` only removes created paths; `remove` deletes folder; an oversized file comes back cut with `truncated` set.
   - Files: `lib/adapters/src/{memory_dir,lib}.rs`.
   - Depends on: T6.
@@ -94,7 +94,7 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
   - Depends on: T7, T12.
 
 - [ ] **T14: `add_project` use case** (M)
-  - Acceptance: `add_project(request)` takes the already-resolved absolute path; the directory and a given `--compose` file are checked through `ProjectInspector::inspect(path, compose)` (the engine does no I/O), which fails with `NotADirectory` or a `compose` error; uses given flags or the inspection (language, framework, manager), derives the id (or fails naming `--id`), applies defaults (`--venv`, `--activate`, `--compose`), stores the path relative to the workspace root, builds and validates against the config, then `MemoryStore::create` (seeded from `ContextSource`), then `save`. Any failure: config unchanged, `discard(created)` called, pre-existing files untouched. Ambiguous or undetectable fails naming the flag.
+  - Acceptance: `add_project(request)` takes the already-resolved absolute path; the directory and a given `--compose` file are checked through `ProjectInspector::inspect(path, compose)` (the engine does no I/O), which fails with `NotADirectory` or a `compose` error; uses given flags or the inspection (language, framework, manager), derives the id (or fails naming `--id`), applies defaults (`--venv`, `--activate`, `--compose`), stores the path relative to the workspace root, builds and validates against the config, then `MemoryStore::create` (seeded from `ProjectContextSource`), then `save`. Any failure: config unchanged, `discard(created)` called, pre-existing files untouched. Ambiguous or undetectable fails naming the flag.
   - Verify: unit tests with fakes: not-a-directory and missing `--compose` fail before anything is written; failure injected at each step leaves config and memory unchanged; duplicate id rejected; duplicate resolved path rejected; re-add finds existing memory files and keeps them; relative-path table tests (`../x`, under root, absolute fallback).
   - Files: `lib/engine/src/workspace/{add,paths,mod}.rs`, `lib.rs`.
   - Depends on: T4, T6 (uses the inspector port; the adapter is T10).

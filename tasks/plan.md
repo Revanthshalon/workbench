@@ -4,7 +4,7 @@ Specs: [`SPEC-workspace.md`](../docs/spec/SPEC-workspace.md) and Slice A of [`SP
 
 ## Overview
 
-Greenfield build. Nothing exists yet except the root `Cargo.toml` (workspace members, pinned dependency versions, lints), the licence and the docs. Build the three crates, the whole `workspace` module (model, validation, YAML store, memory layout, scope, LSP precedence) and, on top of it, the CLI commands `workbench init`, `project add | list | remove`, workspace discovery (`--workspace`, search upward) and the common error behaviour. Nothing here needs Memgraph, `core`, or the `index`/`semantic` modules.
+Built as if from scratch. The repo holds only a small scaffold (`lib/engine`: `Platform`, `ConfigStore`, the old `init`; `services/cli`: the old `init` command, `DirFileStore`, the banner), which T1 replaces rather than builds on. What is kept: the root `Cargo.toml` (members, pinned dependency versions, lints), `lib/engine/src/error.rs`, `lib/engine/templates/`, the banner in `services/cli/src/utils/`, the licence and the docs. Build the three crates, the whole `workspace` module (model, validation, YAML store, memory layout, scope, LSP precedence) and, on top of it, the CLI commands `workbench init`, `project add | list | remove`, workspace discovery (`--workspace`, search upward) and the common error behaviour. Nothing here needs Memgraph, `core`, or the `index`/`semantic` modules.
 
 **Out of Slice A** (per the CLI spec): the `.workbench/mcp/` templates written by `init`, `--index` on `project add` (needs `index`), and the `mcp`, `storage status`, `index`, `watch`, `semantic`, `context`, `platform` groups. `init` has no `--platform`.
 
@@ -23,7 +23,7 @@ Greenfield build. Nothing exists yet except the root `Cargo.toml` (workspace mem
 3. **Randomness without a new dependency:** `IdSource` is implemented in `lib/adapters` from std (`RandomState`); the engine takes the port, tests inject a fixed suffix.
 4. **`pyproject.toml` detection without a TOML crate** ([ADR-0002](../docs/adr/0002-no-toml-crate-for-pyproject.md)): match trimmed `[tool.uv…]` / `[tool.poetry…]` header lines. Mark with a `ponytail:` comment.
 5. **Relative path storage:** `project add` stores the path relative to the workspace root (using `..`), or absolute when no relative form exists. The computation is a pure function in the engine over absolute, already-resolved paths; the CLI canonicalizes first.
-6. **The engine does no I/O, so `project add` checks the directory and a given `--compose` file through `ProjectInspector::inspect(path, compose)`.** `ContextSource` returns `SourceFile { name, content, truncated }`; the adapter cuts at 20 KB and the engine's seed builder adds the `[truncated at 20 KB]` marker.
+6. **The engine does no I/O, so `project add` checks the directory and a given `--compose` file through `ProjectInspector::inspect(path, compose)`.** `ProjectContextSource` returns `SourceFile { name, content, truncated }`; the adapter cuts at 20 KB and the engine's seed builder adds the `[truncated at 20 KB]` marker.
 7. **Integration tests** use `env!("CARGO_BIN_EXE_workbench")` and `std::process::Command`, each in a `tempfile::TempDir` (`tempfile` is an approved dev-dependency; added by the first task that needs it, T7 for adapters and T12 for the CLI, each running `cargo deny check`). The engine's recording fakes live in one `#[cfg(test)]` `testing` module created in T6.
 8. **`project remove --purge-memory`** prints what it will delete and then deletes (no prompt), as the spec says.
 
@@ -34,7 +34,7 @@ T1 scaffold: engine, adapters, workbench build clean
  └─ T2 ProjectId, Language, DependencyManager ── T3 Project, Environment, LSP merge ── T4 WorkspaceConfig + validation ── T5 Scope
                                                                                       └─ T6 memory layout + ports + fakes   (needs T2, T4)
 T6 ─┬─ T7 YAML WorkspaceStore adapter           (needs T4, T6)
-    ├─ T8 MemoryStore + ContextSource adapter   (needs T6)
+    ├─ T8 MemoryStore + ProjectContextSource adapter   (needs T6)
     ├─ T9 Gitignore + IdSource adapters         (needs T6)
     └─ T10 ProjectInspector adapter             (needs T2, T6)
 
