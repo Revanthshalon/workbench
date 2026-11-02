@@ -95,7 +95,7 @@ impl StorageSettings {
 
 `Namespace` (`[a-z0-9][a-z0-9-]{0,63}`) and `EnvVarName` (`[A-Za-z_][A-Za-z0-9_]*`) are parse-don't-validate newtypes.
 
-**LSP.** `LspSettings { enabled: Option<bool>, server: Option<String>, command: Option<Vec<String>>, settings: Option<BTreeMap<String, Value>> }`. Merge is per field, project over workspace default; `settings` is replaced as a whole, not deep-merged (**LLD decision**: the spec says "passed unchanged", so a partial map merge would invent a value). The catalog default is filled in later by the `lsp` module, so absent fields stay `None` here. `Value` is a small enum (`Null, Bool, Int, Float, Str, Seq, Map`) because the engine has no `serde`; the adapter converts from `yaml_serde::Value`.
+**LSP.** `LspSettings { enabled: Option<bool>, server: Option<String>, command: Option<Vec<String>>, settings: Option<BTreeMap<String, Value>>, servers: Option<BTreeMap<FileKind, KindLsp>> }`, where `KindLsp` has the same four fields and `FileKind` is the eight-kind enum of `SPEC-lsp.md` (defined in `workspace`, reused by `lsp`); the merge applies per field and per kind. Merge is per field, project over workspace default; `settings` is replaced as a whole, not deep-merged (**LLD decision**: the spec says "passed unchanged", so a partial map merge would invent a value). The catalog default is filled in later by the `lsp` module, so absent fields stay `None` here. `Value` is a small enum (`Null, Bool, Int, Float, Str, Seq, Map`) because the engine has no `serde`; the adapter converts from `yaml_serde::Value`.
 
 **Scope.** `enum ProjectScope { All, Ids(Vec<ProjectId>) }`; `resolve(&self, &WorkspaceConfig) -> Result<Vec<&Project>, Error>` fails with `UnknownProject` for the first unknown id and drops duplicates.
 

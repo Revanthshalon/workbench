@@ -16,6 +16,7 @@ Module `workspace` from the [capability map](capability-map.md). Status: **appro
 10. *(Amendment, from `SPEC-storage.md`)* Docker Compose files feed the overview of how projects connect (in each view, from that checkout's own files). They normally live inside each project, so a project can name its Compose file; a Compose file that spans projects (for example one at the repository root) is listed at the top level of the config. The workspace also has its own `INIT-MEMORY.md`, where a person writes down how the services fit together; it is read as context and is not parsed into links.
 11. *(Readiness fixes)* Loading checks **structure only**; whether a project's `path` exists is checked by the commands that read the project (`index`, `watch`, `lsp`, `mcp`), so `project list` and `project remove` still work when a directory has moved or been deleted. Unknown keys in `config.yml` are rejected. "Loads and saves unchanged" means the *model* is equal after a round trip: comments and key order are not kept, and defaults are not written back for fields that were absent.
 12. *(Amendment: language, framework and binaries)* One project entry covers everything in a repository. It may list its **binaries**, each a `name` and an `entry` file, written by hand in the config and never detected (detection would need `pyproject.toml` and `angular.json` parsers; see ADR-0002 and the roadmaps in `capability-map.md` and `SPEC-cli.md`). Binaries are metadata only: they do not get their own memory folder, annotations or Compose mapping, and `project add` has no flag for them. Design: [`language-framework-binaries.md`](language-framework-binaries.md).
+13. *(Amendment, from `SPEC-lsp.md`)* A project needs one language server per kind of file (Python, YAML, a Dockerfile, a Compose file; TypeScript, HTML, CSS, SCSS), so an `lsp` block may hold a `servers` map keyed by file kind. The fields directly under `lsp` stay as shorthand for the project's main kind. The kinds and their catalog are defined in `SPEC-lsp.md`.
 
 ## Objective
 
@@ -72,6 +73,9 @@ projects:
       command: [basedpyright-langserver, --stdio]   # optional launch override
       settings:                # passed to the server as-is
         python.analysis.typeCheckingMode: standard
+      servers:                 # optional: one entry per file kind; the fields above are shorthand for the project's main kind
+        yaml: {server: yaml-language-server}
+        dockerfile: {enabled: false}
   - id: web-app
     path: ../shared/web        # may sit outside the workspace root
     language: typescript
@@ -106,7 +110,8 @@ projects:
 | `lsp.server` | Optional. The server name. Syntax is checked here; the name is checked against the catalog by the `lsp` module. |
 | `lsp.command` | Optional. Overrides the catalog's launch command (program and arguments). It runs through `environment.activate` when that is set. |
 | `lsp.settings` | Optional. A free-form map passed to the server unchanged; the workspace does not interpret it. |
-| top-level `lsp.<language>` | Optional. The same fields (`enabled`, `server`, `command`, `settings`) as workspace-wide defaults for every project of that language. The key is `python` or `typescript` (the project languages; a framework is not a key); any other key is an error until `SPEC-lsp.md` says otherwise. Choosing an Angular language server for `framework: angular` is decided in `SPEC-lsp.md`. |
+| `lsp.servers` | Optional. A map keyed by file kind (`python`, `typescript`, `html`, `css`, `scss`, `yaml`, `dockerfile`, `compose`); each value has the same `enabled`, `server`, `command` and `settings`. The fields directly under `lsp` are shorthand for the project's main kind (its `language`). Any other key is an error. The catalog is in `SPEC-lsp.md`. |
+| top-level `lsp.<language>` | Optional. The same fields (`enabled`, `server`, `command`, `settings`, `servers`) as workspace-wide defaults for every project of that language. The key is `python` or `typescript` (the project languages; a framework is not a key); any other key is an error until `SPEC-lsp.md` says otherwise. Choosing an Angular language server for `framework: angular` is decided in `SPEC-lsp.md`. |
 | `storage.host` | Optional, default `localhost`. Non-empty, no whitespace. Memgraph runs on the person's own machine; a shared server is not supported. |
 | `storage.port` | Optional, default `7687`. 1 to 65535. |
 | `storage.username` | Optional. Memgraph has no login unless one is set up. |
@@ -117,7 +122,7 @@ projects:
 | `semantic.llm.endpoint` | Optional, `ollama` and `claude` only. For `ollama` the default is `http://localhost:11434`. |
 | `semantic.llm.api_key_env` | Required for `claude`, rejected for the other providers. The name of an environment variable; the value is read only when an LLM call is made and is held as a `secrecy` secret. `ollama` needs no key, and `copilot-cli` uses the Copilot CLI's own sign-in. |
 
-**Precedence:** the project's `lsp` block wins over the workspace default for its language, which wins over the catalog default. Fields merge one by one, so a project can override only `settings`.
+**Precedence:** the project's `lsp` block wins over the workspace default for its language, which wins over the catalog default. Fields merge one by one, so a project can override only `settings`. The same holds per file kind: the project's `servers.<kind>` over the workspace default's `servers.<kind>` over the catalog entry for that kind.
 
 ### Project scope
 
@@ -212,7 +217,7 @@ Conventions follow the existing code: one error enum in `error.rs`, doc comments
 
 - **Framework:** built-in `cargo test`, no extra harness.
 - **Engine unit tests** (next to the code, with fake stores):
-  - LSP precedence: project over workspace default, a partial override keeps the other fields, `enabled: false` is respected.
+  - LSP precedence: project over workspace default, a partial override keeps the other fields, `enabled: false` is respected, all of it also per file kind; an unknown `servers` key is rejected.
   - `ProjectId` accepts and rejects the right strings.
   - Duplicate ids, mismatched language and dependency manager, an unknown version, an unknown key, duplicate resolved paths, a duplicate top-level Compose path, `venv` on a `typescript` project, `framework: angular` on a `python` project, a duplicate binary name within a project, an absolute or empty binary `entry`, a bad port, a bad namespace and a bad environment variable name are rejected.
   - A config whose project `path` does not exist still loads, and `list` and `remove` work on it.
