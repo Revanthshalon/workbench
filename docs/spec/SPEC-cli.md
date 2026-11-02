@@ -4,7 +4,7 @@ Module `cli` from the [capability map](capability-map.md). Status: **approved.**
 
 Depends on [`workspace`](SPEC-workspace.md) (approved) and, for the `mcp` command group, [`core`](SPEC-core.md). `storage status` depends on `storage`, and `context check | sync` on `contexts`. The `index`, `watch` and `semantic` command groups also depend on `graph` and `semantic-layer`; they are specified here as the command surface and wired once those modules exist.
 
-**Build slices.** *Slice A* (buildable now, needs only the approved `workspace` spec): `init` (without `--platform`, and without the `.workbench/mcp/` templates, which are added when `core`'s model is built), `project add | list | remove`, workspace discovery and common behaviour. *Wired as their modules are built:* the `mcp` group (`core`) and `storage status` (`storage`; both specs are approved, the code is not yet). *Later slices*, each started only when the specs it needs are approved: `index` and `watch` (`SPEC-index.md`, `SPEC-graph.md`), `semantic` (`SPEC-semantic-layer.md`), `context check | sync` (`contexts`, `storage`, `graph`) and `platform` (`SPEC-platform-setup.md`, `SPEC-lsp.md`).
+**Build order.** The commands are built by milestone ([`docs/roadmap.md`](../roadmap.md)), each started only when the specs it needs are approved. **M1** (needs only the approved `workspace` spec): `init` (without `--platform`, and without the `.workbench/mcp/` templates, which are added in M2 when `core`'s model is built), `project add | list | remove`, workspace discovery and common behaviour. **M2:** the `mcp` group (`core`). **M3:** `storage status` (`storage`) and `lsp` (`SPEC-lsp.md`). **M4:** `platform` (`SPEC-platform-setup.md`). **M5:** `index`, `watch` (`SPEC-index.md`, `SPEC-graph.md`) and `context check | sync` (`contexts`, `storage`, `graph`). **M6:** `semantic` (`SPEC-semantic-layer.md`).
 
 ## Decisions
 
@@ -240,8 +240,8 @@ Runs and manages the MCP server, specified in `SPEC-core.md`: `start [--mode M] 
 
 - Rust 2024; `clap` (derive) for arguments; engine and adapters from the workspace.
 - `serde` and `yaml_serde` come in through `lib/adapters`; the CLI does not depend on them directly.
-- No new dependencies for Slice A. Integration tests use the binary path cargo provides to tests (`env!("CARGO_BIN_EXE_workbench")`) and `std::process::Command`.
-- **Approved for the later slices** (added to the workspace `Cargo.toml` by the task that first uses them, not before): `notify` for the `watch` file-event source, and `reqwest` (async, on the workspace's `tokio`; `default-features = false`, `rustls-tls` and `json`) for the `claude` and `ollama` adapters. Versions are pinned in `Cargo.toml` when added. `deny.toml` allows only MIT, Apache-2.0 and Unicode-3.0, which the TLS stack's licences may not satisfy, so that task must run `cargo deny check` and add any exception it needs, each with a reason, as a reviewed change. `tempfile` is also approved, as a dev-dependency only (adapter and integration tests); the task that first uses it adds it with a pinned version and runs `cargo deny check`.
+- No new dependencies for M1. Integration tests use the binary path cargo provides to tests (`env!("CARGO_BIN_EXE_workbench")`) and `std::process::Command`.
+- **Approved for the later milestones** (added to the workspace `Cargo.toml` by the task that first uses them, not before): `notify` for the `watch` file-event source, and `reqwest` (async, on the workspace's `tokio`; `default-features = false`, `rustls-tls` and `json`) for the `claude` and `ollama` adapters. Versions are pinned in `Cargo.toml` when added. `deny.toml` allows only MIT, Apache-2.0 and Unicode-3.0, which the TLS stack's licences may not satisfy, so that task must run `cargo deny check` and add any exception it needs, each with a reason, as a reviewed change. `tempfile` is also approved, as a dev-dependency only (adapter and integration tests); the task that first uses it adds it with a pinned version and runs `cargo deny check`.
 
 ## Project Structure
 
@@ -275,7 +275,7 @@ lib/adapters/src/         # + project_inspector.rs, gitignore_file.rs (the serve
 | `GitignoreStore` | `ensure_ignored(root, entry)` appends the entry once, creating the file if missing. |
 | `ServerConfigSource` (defined in `SPEC-core.md`) | Gains `create_template(root)`, which writes the server config and the context config templates under `.workbench/mcp/`, never overwriting. Used by `init` once `core` exists. |
 
-Ports for later slices, added when their slice is planned: `LlmClient` (`generate`, `index --annotate`; one adapter per provider), `FileEventSource` (`watch`), `IndexLock` (the single write lock shared by `index`, `watch` and MCP `reindex`) and the watcher's control channel (`flush`, `stop`, `status`).
+Ports for later milestones, added when their milestone is planned: `LlmClient` (`generate`, `index --annotate`; one adapter per provider), `FileEventSource` (`watch`), `IndexLock` (the single write lock shared by `index`, `watch` and MCP `reindex`) and the watcher's control channel (`flush`, `stop`, `status`).
 
 `WorkspaceStore`, `MemoryStore` and `ProjectContextSource` come from `SPEC-workspace.md`. The `index` and `semantic` commands call engine use cases (`index_projects`, and the annotation use cases) that are defined by `SPEC-index.md` and `SPEC-semantic-layer.md`; the CLI adds no rules of its own for them.
 

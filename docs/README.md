@@ -1,7 +1,8 @@
 # Docs
 
-| Folder | Contents |
-|--------|----------|
+| Path | Contents |
+|------|----------|
+| [`roadmap.md`](roadmap.md) | Implementation roadmap: milestones, order and the specs to read |
 | [`adr`](adr/README.md) | Architecture decision records |
 | [`hld`](hld/README.md) | High-level design |
 | [`lld`](lld/README.md) | Low-level design |

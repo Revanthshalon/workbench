@@ -4,7 +4,7 @@ Command-line tool for Workbench, and the way to run and manage the MCP server (`
 
 ## Usage
 
-Every command, with its options and status, is in the [CLI reference](../../docs/reference/cli.md). Build Slice A (first) covers the workspace commands:
+Every command, with its options and status, is in the [CLI reference](../../docs/reference/cli.md). Milestone M1 (first) builds the workspace commands; the order of the rest is in the [roadmap](../../docs/roadmap.md):
 
 ```sh
 workbench init [--out <DIR>]                  # create .workbench/ (config, workspace memory, .gitignore line)
@@ -13,7 +13,7 @@ workbench project list
 workbench project remove <ID> [--purge-memory]
 ```
 
-Commands other than `init` find the workspace by searching upward for `.workbench/`; `--workspace <DIR>` overrides. Later slices add `index`, `watch`, `semantic`, `storage status`, `context`, `mcp` and `platform`. Until they are built, only the scaffold's `init` exists, and it writes an empty config.
+Commands other than `init` find the workspace by searching upward for `.workbench/`; `--workspace <DIR>` overrides. Later milestones add `index`, `watch`, `semantic`, `storage status`, `context`, `mcp` and `platform`. Until they are built, only the scaffold's `init` exists, and it writes an empty config.
 
 Storage: Workbench keeps its graph in Memgraph; `workbench storage status` checks it. See the [root README](../../README.md#storage).
 
@@ -23,11 +23,11 @@ Storage: Workbench keeps its graph in Memgraph; `workbench storage status` check
 |------|------|
 | `src/main.rs` | Wiring only: parse, locate the workspace, build adapters, call `engine`, print |
 | `src/cli.rs` | Driving adapter: clap types and their mapping to engine types |
-| `src/output.rs` | Formatting of results and errors (planned, Slice A) |
+| `src/output.rs` | Formatting of results and errors (planned, M1) |
 | `src/utils/` | Small helpers (the banner, workspace discovery) |
 | `src/mcp/` | The MCP server and its life cycle (planned; see `docs/spec/SPEC-core.md`) |
 | `src/watch/` | The background index watcher (planned; see `docs/spec/SPEC-cli.md`) |
-| `tests/cli.rs` | Runs the built binary against temp directories (planned, Slice A) |
+| `tests/cli.rs` | Runs the built binary against temp directories (planned, M1) |
 
 Driven adapters (YAML config, memory folders, gitignore, project inspection) live in `lib/adapters`, not here.
 

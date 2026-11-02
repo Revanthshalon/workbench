@@ -10,6 +10,6 @@ The core of Workbench: domain types, ports and use cases. It does no I/O, and ha
 | `error` | `Error` |
 | `testing` | Recording fakes for the ports, compiled for tests only |
 
-The engine has no `serde`: parsing and file formats belong to the adapters ([ADR-0001](../../docs/adr/0001-engine-free-of-serde.md)). Design: [`LLD-workspace-cli.md`](../../docs/lld/LLD-workspace-cli.md). The module list above is the Slice A target ([plan](../../tasks/plan.md)); until it is built, the scaffold has `Platform`, `ConfigStore` and `init()`.
+The engine has no `serde`: parsing and file formats belong to the adapters ([ADR-0001](../../docs/adr/0001-engine-free-of-serde.md)). Design: [`LLD-workspace-cli.md`](../../docs/lld/LLD-workspace-cli.md). The module list above is the M1 target ([plan](../../tasks/plan.md)); until it is built, the scaffold has `Platform`, `ConfigStore` and `init()`.
 
 Adapters in the services implement the ports. See [Architecture](../../README.md#architecture).

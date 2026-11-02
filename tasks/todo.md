@@ -1,6 +1,6 @@
-# Tasks: Slice A
+# Tasks: Milestone M1
 
-Plan: [`plan.md`](plan.md). Specs: `SPEC-workspace.md`, Slice A of `SPEC-cli.md`.
+Plan: [`plan.md`](plan.md). Roadmap: [`docs/roadmap.md`](../docs/roadmap.md). Specs: `SPEC-workspace.md`, the M1 commands of `SPEC-cli.md`.
 Standing verification for every task: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`. Style: doc comments on public items, no `unwrap`/`panic`, parse-don't-validate. Test first.
 
 ## Phase 1: Foundation
@@ -100,7 +100,7 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
   - Depends on: T4, T6 (uses the inspector port; the adapter is T10).
 
 - [ ] **T15: `workbench project add` end to end** (M)
-  - Acceptance: `project add <PATH> [--id --language --framework --dependency-manager --venv --activate --compose]` (no `--index` in this slice; it is rejected as unknown with exit 2); enums via `LanguageArg`/`FrameworkArg`/`DependencyManagerArg`; no flag for binaries; prints what was created.
+  - Acceptance: `project add <PATH> [--id --language --framework --dependency-manager --venv --activate --compose]` (no `--index` in M1; it is rejected as unknown with exit 2); enums via `LanguageArg`/`FrameworkArg`/`DependencyManagerArg`; no flag for binaries; prints what was created.
   - Verify: integration tests: uv, poetry and Angular (`typescript` + `angular`; npm, pnpm, yarn, bun) projects detect correctly; `--framework angular` with `--language python` exits 1 naming the field and create `INIT-MEMORY.md` plus an empty `annotations.yml`; ambiguous and undetectable fail naming the flag; failure leaves config and memory unchanged.
   - Files: `services/cli/src/{cli,main,output}.rs`, `services/cli/tests/cli.rs`, fixtures under `services/cli/tests/`.
   - Depends on: T13, T14, T8, T10.
@@ -123,4 +123,4 @@ Standing verification for every task: `cargo fmt --all -- --check`, `cargo clipp
   - Depends on: T1–T16.
 
 ### Checkpoint D: done
-- [ ] Workspace success criteria 1–7 and CLI Slice A criteria 1–6 and 15 met; ready for review.
+- [ ] Workspace success criteria 1–7 and CLI criteria 1–6 and 15 (the M1 commands) met; ready for review.

@@ -1,6 +1,6 @@
 # Design: project `language`, `framework` and `binaries`
 
-Status: **approved** (2026-11-02) and applied to the capability map, `SPEC-workspace`, `SPEC-cli`, `SPEC-storage`, the HLD, the LLD and `tasks/` (2026-11-02). After this the specs are the source of truth. Changes the approved [`SPEC-workspace`](SPEC-workspace.md) and Slice A of [`SPEC-cli`](SPEC-cli.md). Once approved, the specs, [LLD](../lld/LLD-workspace-cli.md) and [`tasks/todo.md`](../../tasks/todo.md) are updated to match; this document is not the source of truth after that.
+Status: **approved** (2026-11-02) and applied to the capability map, `SPEC-workspace`, `SPEC-cli`, `SPEC-storage`, the HLD, the LLD and `tasks/` (2026-11-02). After this the specs are the source of truth. Changes the approved [`SPEC-workspace`](SPEC-workspace.md) and the M1 commands of [`SPEC-cli`](SPEC-cli.md). Once approved, the specs, [LLD](../lld/LLD-workspace-cli.md) and [`tasks/todo.md`](../../tasks/todo.md) are updated to match; this document is not the source of truth after that.
 
 ## Intent
 
@@ -65,7 +65,7 @@ Error wording; the exact `BinaryName` type (reuse the id rules, own newtype); fi
 ## Calls made (confirmed)
 
 - `entry` is required, relative, and unchecked.
-- Binaries are config-only in Slice A.
+- Binaries are config-only in M1.
 - Compose `services` still map to a project id, not a binary.
 - `typescript` without `angular.json` is not auto-detected.
 - List column shows `typescript/angular`.
