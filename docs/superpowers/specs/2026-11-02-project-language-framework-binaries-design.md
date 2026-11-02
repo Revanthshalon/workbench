@@ -1,6 +1,6 @@
 # Design: project `language`, `framework` and `binaries`
 
-Status: **proposed.** Changes the approved [`SPEC-workspace`](../../spec/SPEC-workspace.md) and Slice A of [`SPEC-cli`](../../spec/SPEC-cli.md). Once approved, the specs, [LLD](../../lld/LLD-workspace-cli.md) and [`tasks/todo.md`](../../../tasks/todo.md) are updated to match; this document is not the source of truth after that.
+Status: **proposed; capability map updated.** Changes the approved [`SPEC-workspace`](../../spec/SPEC-workspace.md) and Slice A of [`SPEC-cli`](../../spec/SPEC-cli.md). Once approved, the specs, [LLD](../../lld/LLD-workspace-cli.md) and [`tasks/todo.md`](../../../tasks/todo.md) are updated to match; this document is not the source of truth after that.
 
 ## Intent
 
