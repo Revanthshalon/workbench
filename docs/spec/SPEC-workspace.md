@@ -100,7 +100,7 @@ projects:
 | `dependency_manager` | Required. `poetry` or `uv` for `python`; `npm`, `pnpm`, `yarn` or `bun` for `typescript`. A mismatched pair is an error. |
 | `binaries` | Optional list. Names are unique within the project; an empty list is the same as absent. |
 | `binaries[].name` | Required. Same grammar as a project id (lowercase letters, digits and `-`; starts with a letter; 1 to 64 characters). A duplicate within the project is an error naming the project and the name. |
-| `binaries[].entry` | Required. A non-empty path relative to the project directory; an absolute path is an error. Stored as written and not checked for existence, on load or by any command in this slice. |
+| `binaries[].entry` | Required. A non-empty path relative to the project directory; an absolute path is an error. Stored as written and not checked for existence, on load or by any command in M1. |
 | `environment.venv` | Optional, Python only (an error on a `typescript` project). Relative to the project path. |
 | `environment.activate` | Optional. A command prefix used to launch tools in the project (for example `uv run` or `poetry run`), including the project's language server. |
 | `compose` (project) | Optional. A path relative to the project, or absolute. If absent, the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` at the project root is used, and having none is fine. A listed path that does not exist is an error when `project add` is given it or a command reads it, not on load. |

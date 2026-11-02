@@ -1,6 +1,6 @@
 # High-level design: Workbench
 
-Status: **approved.** Summarizes the approved [capability map](../spec/capability-map.md) and module specs at system level. Where this document and a spec disagree, the spec wins; fix this document. Component-level design for the first build slice is in [`LLD-workspace-cli.md`](../lld/LLD-workspace-cli.md).
+Status: **approved.** Summarizes the approved [capability map](../spec/capability-map.md) and module specs at system level. Where this document and a spec disagree, the spec wins; fix this document. Component-level design for milestone M1 is in [`LLD-workspace-cli.md`](../lld/LLD-workspace-cli.md).
 
 ## 1. Purpose and scope
 
@@ -88,7 +88,7 @@ Memgraph holds, per namespace and view: `Project` nodes (carrying framework and 
 | `index`, `graph`, `semantic-layer` | Parsing, graph, annotations and search | `storage`, … |
 | `operations`, `data`, `execution-flow`, `flow-memory`, `incidents`, `dev-support`, `agent-prompts` | Operational tools, flows, incident memory, developer tools and prompts | as in the capability map |
 
-Build order: `workspace → cli, core → contexts, storage, lsp → audit → graph → semantic-layer, operations, data → execution-flow → flow-memory, incidents → agent-prompts`. **Current slice:** `workspace` plus the CLI's `init` and `project` commands ([plan](../../tasks/plan.md)).
+Build order: `workspace → cli, core → contexts, storage, lsp → audit → graph → semantic-layer, operations, data → execution-flow → flow-memory, incidents → agent-prompts`. **Current milestone:** M1, `workspace` plus the CLI's `init` and `project` commands ([roadmap](../roadmap.md), [plan](../../tasks/plan.md)).
 
 ## 7. Quality attributes
 
@@ -112,4 +112,4 @@ Build order: `workspace → cli, core → contexts, storage, lsp → audit → g
 
 ## 9. Related documents
 
-Specs: [`docs/spec`](../spec/README.md). Plan for the current slice: [`tasks/plan.md`](../../tasks/plan.md). Low-level design: [`docs/lld`](../lld/README.md). ADRs: [`docs/adr`](../adr/README.md).
+Specs: [`docs/spec`](../spec/README.md). Implementation order: [`docs/roadmap.md`](../roadmap.md). Plan for the current milestone: [`tasks/plan.md`](../../tasks/plan.md). Low-level design: [`docs/lld`](../lld/README.md). ADRs: [`docs/adr`](../adr/README.md).

@@ -1,6 +1,6 @@
-# Low-level design: workspace model and CLI Slice A
+# Low-level design: workspace model and CLI (milestone M1)
 
-Status: **approved.** Implements [`SPEC-workspace.md`](../spec/SPEC-workspace.md) and Slice A of [`SPEC-cli.md`](../spec/SPEC-cli.md) (`init`, `project add | list | remove`, discovery, common behaviour). System context: [`HLD-workbench.md`](../hld/HLD-workbench.md). Tasks: [`tasks/todo.md`](../../tasks/todo.md). The specs win on behaviour; this document fixes types, signatures and mechanics. Choices the specs leave open are marked **LLD decision**.
+Status: **approved.** Implements [`SPEC-workspace.md`](../spec/SPEC-workspace.md) and the M1 commands of [`SPEC-cli.md`](../spec/SPEC-cli.md) (`init`, `project add | list | remove`, discovery, common behaviour). System context: [`HLD-workbench.md`](../hld/HLD-workbench.md). Tasks: [`tasks/todo.md`](../../tasks/todo.md). The specs win on behaviour; this document fixes types, signatures and mechanics. Choices the specs leave open are marked **LLD decision**.
 
 ## 1. Crates and files
 

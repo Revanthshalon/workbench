@@ -1,12 +1,12 @@
-# Implementation Plan: Slice A (workspace model + `init`, `project`, discovery)
+# Implementation Plan: Milestone M1 (workspace model + `init`, `project`, discovery)
 
-Specs: [`SPEC-workspace.md`](../docs/spec/SPEC-workspace.md) and Slice A of [`SPEC-cli.md`](../docs/spec/SPEC-cli.md) (both approved). Task details and acceptance criteria are in [`todo.md`](todo.md). Design: [HLD](../docs/hld/HLD-workbench.md) (system) and [LLD](../docs/lld/LLD-workspace-cli.md) (types, ports, algorithms for this slice). Decisions: [ADRs](../docs/adr/README.md).
+This is milestone M1 of the [roadmap](../docs/roadmap.md). Specs: [`SPEC-workspace.md`](../docs/spec/SPEC-workspace.md) and the M1 commands of [`SPEC-cli.md`](../docs/spec/SPEC-cli.md) (both approved). Task details and acceptance criteria are in [`todo.md`](todo.md). Design: [HLD](../docs/hld/HLD-workbench.md) (system) and [LLD](../docs/lld/LLD-workspace-cli.md) (types, ports, algorithms for this milestone). Decisions: [ADRs](../docs/adr/README.md).
 
 ## Overview
 
 Built as if from scratch. The repo holds only a small scaffold (`lib/engine`: `Platform`, `ConfigStore`, the old `init`; `services/cli`: the old `init` command, `DirFileStore`, the banner), which T1 replaces rather than builds on. What is kept: the root `Cargo.toml` (members, pinned dependency versions, lints), `lib/engine/src/error.rs`, `lib/engine/templates/`, the banner in `services/cli/src/utils/`, the licence and the docs. Build the three crates, the whole `workspace` module (model, validation, YAML store, memory layout, scope, LSP precedence) and, on top of it, the CLI commands `workbench init`, `project add | list | remove`, workspace discovery (`--workspace`, search upward) and the common error behaviour. Nothing here needs Memgraph, `core`, or the `index`/`semantic` modules.
 
-**Out of Slice A** (per the CLI spec): the `.workbench/mcp/` templates written by `init`, `--index` on `project add` (needs `index`), and the `mcp`, `storage status`, `index`, `watch`, `semantic`, `context`, `platform` groups. `init` has no `--platform`.
+**Out of M1** (per the roadmap and the CLI spec): the `.workbench/mcp/` templates written by `init`, `--index` on `project add` (needs `index`), and the `mcp`, `storage status`, `index`, `watch`, `semantic`, `context`, `platform` groups. `init` has no `--platform`.
 
 ## Crates
 
@@ -19,7 +19,7 @@ Built as if from scratch. The repo holds only a small scaffold (`lib/engine`: `P
 ## Architecture decisions
 
 1. **Engine stays free of `serde`** ([ADR-0001](../docs/adr/0001-engine-free-of-serde.md)). The YAML adapter owns serde DTOs (`deny_unknown_fields`) and maps them to engine types. Cost: one DTO layer.
-2. **Whole config model from the start, not just what Slice A edits.** `project add` must save a config that may hold hand-written `lsp`, `compose` and `semantic.llm` blocks without losing them, and workspace success criterion 2 requires the round trip. So the model carries every field, including `framework` and hand-written `binaries` (never detected, so no new parser; see the [design](../docs/spec/language-framework-binaries.md)).
+2. **Whole config model from the start, not just what M1 edits.** `project add` must save a config that may hold hand-written `lsp`, `compose` and `semantic.llm` blocks without losing them, and workspace success criterion 2 requires the round trip. So the model carries every field, including `framework` and hand-written `binaries` (never detected, so no new parser; see the [design](../docs/spec/language-framework-binaries.md)).
 3. **Randomness without a new dependency:** `IdSource` is implemented in `lib/adapters` from std (`RandomState`); the engine takes the port, tests inject a fixed suffix.
 4. **`pyproject.toml` detection without a TOML crate** ([ADR-0002](../docs/adr/0002-no-toml-crate-for-pyproject.md)): match trimmed `[tool.uv…]` / `[tool.poetry…]` header lines. Mark with a `ponytail:` comment.
 5. **Relative path storage:** `project add` stores the path relative to the workspace root (using `..`), or absolute when no relative form exists. The computation is a pure function in the engine over absolute, already-resolved paths; the CLI canonicalizes first.
@@ -69,7 +69,7 @@ The engine chain T2 → T3 → T4 → T6 is sequential; T5 can run beside T6. On
 
 **Checkpoint B: adapters.** Adapter tests pass against fixtures; round trip equals model.
 
-### Phase 3: Commands (vertical slices)
+### Phase 3: Commands (one feature path per task)
 - T11 `init` use case
 - T12 `workbench init` end to end
 - T13 Workspace discovery and `project list`
@@ -82,7 +82,7 @@ The engine chain T2 → T3 → T4 → T6 is sequential; T5 can run beside T6. On
 ### Phase 4: Finish
 - T17 Hardening and docs
 
-**Checkpoint D: done.** Success criteria of both specs (Slice A subset) met; `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` and `cargo fmt --all -- --check` pass.
+**Checkpoint D: done.** Success criteria of both specs (M1 subset) met; `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` and `cargo fmt --all -- --check` pass.
 
 ## Delivery
 
@@ -92,7 +92,7 @@ One branch per phase off `develop`, one commit per task, one PR per phase refere
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Whole config model is larger than Slice A strictly needs | Med | Keep types plain; LSP merge and scope are small pure functions with the tests the spec lists; no extra features |
+| Whole config model is larger than M1 strictly needs | Med | Keep types plain; LSP merge and scope are small pure functions with the tests the spec lists; no extra features |
 | DTO layer drifts from engine types | Med | Round-trip test with a config holding every optional block (workspace criterion 2) |
 | `[tool.uv]` text match misdetects | Low | Fixture tests for uv, poetry, both, neither; documented ceiling; fails safe (ambiguous names the flag) |
 | Relative-path computation edge cases (`..`, symlinks, different roots) | Med | Pure function with table tests; the CLI canonicalizes first; fall back to absolute |

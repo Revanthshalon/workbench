@@ -2,26 +2,26 @@
 
 One page listing every `workbench` command, with its options and the spec that defines it. It is a summary: **the spec wins** where they differ. Planned commands are marked, and nothing here is built yet beyond the scaffold.
 
-Status key: **A** = build Slice A (first slice, [plan](../../tasks/plan.md)); **wired** = spec approved, built as its module is built; **later** = needs a spec that is not written yet.
+Status is the build milestone from the [roadmap](../roadmap.md): M1 is planned in [`tasks/plan.md`](../../tasks/plan.md); the others start when their specs are approved.
 
 ## Command index
 
 | Command | Purpose | Defined in | Status |
 |---|---|---|---|
-| `workbench init` | Create `.workbench/` in a directory | `SPEC-cli` | A |
-| `workbench project add` | Add a project to the workspace | `SPEC-cli` | A |
-| `workbench project list` | List the workspace's projects | `SPEC-cli` | A |
-| `workbench project remove` | Remove a project | `SPEC-cli` | A |
-| `workbench storage status` | Check Memgraph and what is stored | `SPEC-cli`, `SPEC-storage` | wired (`storage`) |
-| `workbench mcp start \| serve \| stop \| restart \| status \| logs \| connect` | Run and manage the MCP server | `SPEC-core` | wired (`core`) |
-| `workbench context check` | Check a context's connections | `SPEC-cli`, `SPEC-contexts` | later (its `code` line needs `graph`) |
-| `workbench context sync` | Create or move a context's branch worktrees | `SPEC-cli`, `SPEC-contexts` | later (indexes the view, needs `graph`) |
-| `workbench index` | Build and update the AST data | `SPEC-cli` (`SPEC-index` to write) | later |
-| `workbench watch [start] \| stop \| status \| logs \| flush` | Keep the index fresh | `SPEC-cli` (`SPEC-index` to write) | later |
-| `workbench semantic add \| revise \| retract \| prune \| generate \| list \| show` | Annotations on AST nodes | `SPEC-cli` (`SPEC-semantic-layer` to write) | later |
-| `workbench platform setup` | Configure an AI platform's LSP integration | `SPEC-platform-setup` (to write) | later |
-| `workbench platform hooks install \| uninstall \| list` | Install platform hooks for `watch` | `SPEC-platform-setup` (to write) | later |
-| `workbench lsp run <project-id>` | Launch a project's language server over stdio | `SPEC-lsp` (to write) | later |
+| `workbench init` | Create `.workbench/` in a directory | `SPEC-cli` | M1 |
+| `workbench project add` | Add a project to the workspace | `SPEC-cli` | M1 |
+| `workbench project list` | List the workspace's projects | `SPEC-cli` | M1 |
+| `workbench project remove` | Remove a project | `SPEC-cli` | M1 |
+| `workbench storage status` | Check Memgraph and what is stored | `SPEC-cli`, `SPEC-storage` | M3 |
+| `workbench mcp start \| serve \| stop \| restart \| status \| logs \| connect` | Run and manage the MCP server | `SPEC-core` | M2 |
+| `workbench context check` | Check a context's connections | `SPEC-cli`, `SPEC-contexts` | M5 |
+| `workbench context sync` | Create or move a context's branch worktrees | `SPEC-cli`, `SPEC-contexts` | M5 |
+| `workbench index` | Build and update the AST data | `SPEC-cli`, `SPEC-index` (draft) | M5 |
+| `workbench watch [start] \| stop \| status \| logs \| flush` | Keep the index fresh | `SPEC-cli`, `SPEC-index` (draft) | M5 |
+| `workbench semantic add \| revise \| retract \| prune \| generate \| list \| show` | Annotations on AST nodes | `SPEC-cli`, `SPEC-semantic-layer` (draft) | M6 |
+| `workbench platform setup` | Configure an AI platform's LSP integration | `SPEC-platform-setup` (not written) | M4 |
+| `workbench platform hooks install \| uninstall \| list` | Install platform hooks for `watch` | `SPEC-platform-setup` (not written) | M4 |
+| `workbench lsp run <project-id>` | Launch a project's language server over stdio | `SPEC-lsp` (draft) | M3 |
 
 ## Common behaviour
 
@@ -47,7 +47,7 @@ workbench init [--out <DIR>]
 
 Creates `.workbench/config.yml` (`version: 1`, a `storage` block with `localhost`, `7687` and a unique `namespace`, `projects: []`), `.workbench/memory/INIT-MEMORY.md`, and a `.workbench/` line in `<DIR>/.gitignore` (created if missing, never added twice). Refuses, changing nothing, if `config.yml` exists. No `--platform`: use `platform setup`.
 
-The server config template (`.workbench/mcp/config.yml`) and one context template per default context are added when `core` is built; they are not part of Slice A.
+The server config template (`.workbench/mcp/config.yml`) and one context template per default context are added in M2, when `core` is built; M1 does not write them.
 
 ## `project`
 
@@ -62,7 +62,7 @@ The server config template (`.workbench/mcp/config.yml`) and one context templat
 | `--venv <PATH>` | Python only. Default: `.venv` if present |
 | `--activate <COMMAND>` | Command prefix to launch tools in the project. Default: `uv run`, `poetry run`, or none |
 | `--compose <PATH>` | Compose file, relative to the project. Default: first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` at the project root. Error if given and missing |
-| `--index` | Index right after adding (needs `index`; rejected as unknown in Slice A) |
+| `--index` | Index right after adding (needs `index`; rejected as unknown until M5) |
 
 All or nothing: validates the path, detects language and manager (reads files only), validates against the workspace rules, creates `.workbench/memory/<id>/INIT-MEMORY.md` (seeded from `README.md`, `CLAUDE.md`, `AGENTS.md` if present) and an empty `annotations.yml`, then saves the config. Existing memory files are never overwritten. Ambiguous or undetectable language or manager fails naming the flag to pass. Binaries are not set here; they are written by hand in `config.yml`.
 
@@ -109,7 +109,7 @@ All take `--workspace <DIR>` and, where a mode applies, `--mode <MODE>`: `develo
 | `context check [--context NAME]` | One line per system (`ssh`, `kubectl`, `postgres`, `redis`, `kafka`, `code`): `ok`, `failed` or `skipped`, with timing. Needs the server config and the context file, both complete. Checks only that context. Exit `0` if all checked are `ok`, else `1`. Does not verify credentials are read-only |
 | `context sync [--context NAME] [--project ID]... [--fetch]` | Create or move one git worktree per project at the context's branch (`.workbench/worktrees/<context>/<project-id>/`) and index it. Uses the local branch unless `--fetch`. Never touches a project's own working tree, branch or refs. `--context` defaults to `default_context` |
 
-## `index` (later)
+## `index` (M5)
 
 ```
 workbench index [--project <ID>]... [--changed | --full] [--annotate]
@@ -124,7 +124,7 @@ workbench index [--project <ID>]... [--changed | --full] [--annotate]
 
 Incremental by default; reads project files, writes only to Memgraph; progress on stderr, per-project summary on stdout. Fails with a hint when the workspace has no projects. Shares one lock with `watch` and the MCP `reindex` tool.
 
-## `watch` (later)
+## `watch` (M5)
 
 | Command | Behaviour |
 |---|---|
@@ -136,7 +136,7 @@ Incremental by default; reads project files, writes only to Memgraph; progress o
 
 Batches events (500 ms). Needs the workspace config and Memgraph only. Never calls an LLM or changes project files. Log: `.workbench/logs/watch-<YYYYMMDD-HHMMSS>.log`.
 
-## `semantic` (later)
+## `semantic` (M6)
 
 Node selection flags (any command that targets a node): `--project <ID>`, `--file <PATH>` (needs `--project`), `--symbol <NAME>` (needs `--file`). A link's target uses `--to-project`, `--to-file`, `--to-symbol`, or `--to-custom <NAME>`. Kinds: `purpose`, `role`, `domain-term`, `tag`, `link`.
 
@@ -152,7 +152,7 @@ Node selection flags (any command that targets a node): `--project <ID>`, `--fil
 
 Person-written annotations are mirrored to `.workbench/memory/<project-id>/annotations.yml` and never overwritten by an agent. LLM use is opt-in twice: `semantic.llm` in the config **and** `generate` / `index --annotate`.
 
-## `platform` and `lsp` (later, specs not written)
+## `platform` (M4) and `lsp` (M3)
 
 | Command | Behaviour (from the capability map and `SPEC-cli`) |
 |---|---|
