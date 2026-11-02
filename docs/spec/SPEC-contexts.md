@@ -105,6 +105,8 @@ kafka:                              # reached through the VM
 |---|---|
 | `version` | Required, `1`. |
 | `ssh` | Required: every operational system is reached through the VM. `host`, `user` and a password secret (`password` or `password_env`) are required. `host_key` is an optional pin (`SHA256:…`). |
+| `ssh.connect_timeout` | Optional, seconds, default `10`: the time limit for the SSH login probe. |
+| `timeout` | Optional on `kubectl` and on each `postgres`, `redis` and `kafka` connection, seconds, default `10`: the time limit for that probe. |
 | `access` | Optional on each `postgres` and `redis` connection and on `kafka`; `tunnel` (default) or `remote`. With `remote`, a password or other secret field on that connection is rejected ("passwords are not sent to the VM; remove it or use `access: tunnel`"), and `binary` (`psql`, `redis-cli`) or `bin_dir` (Kafka tools) name the program on the VM. With `tunnel`, `binary` and `bin_dir` are rejected. |
 | Sections | Every other section (`kubectl`, `postgres`, `redis`, `kafka`) is optional. A system that is not configured is `skipped` and its tools say it is not configured for this context. |
 | Unknown keys | Rejected with the file, the path and the key, so a typo cannot silently disable a setting. |
@@ -255,17 +257,17 @@ lib/engine/src/contexts/
 ├── remote.rs      # CommandTemplate (fixed program, validated parameters) and the allow rule the runner enforces
 └── template.rs    # the template fragment
 
-lib/engine/src/ports.rs      # + ContextSource, Probe (one trait, one implementation per system), Confirm (elicitation), Git (branches, worktrees), Remote (run a typed command on the VM, open a tunnel)
+lib/engine/src/ports.rs      # + WorkspaceContextSource, Probe (one trait, one implementation per system), Confirm (elicitation), Git (branches, worktrees), Remote (run a typed command on the VM, open a tunnel)
 
 lib/adapters/src/contexts/
-├── source_file.rs   # reads the server config's context files
+├── source_file.rs   # WorkspaceContextSource over the server config's context files
 ├── git_worktree.rs  # the Git port over the `git` program: resolve branch, add or move a worktree
 ├── ssh_remote.rs    # the Remote port over SSH: connection per context, host key check, runner, tunnels
 └── probes/{kubectl,postgres,redis,kafka}.rs
 
 services/cli/src/
 ├── mcp/modules/contexts.rs   # context_list, context_current, context_switch
-└── commands/context.rs       # `workbench context check` and `workbench context sync`
+└── commands/context.rs       # `workbench context check` and `workbench context sync` (the `commands/` folder: SPEC-cli)
 ```
 
 ## Code Style
@@ -292,7 +294,7 @@ pub struct PostgresSpec {
 ## Testing Strategy
 
 - **Engine unit tests:**
-  - Validation: the `ssh` section (host and user required, exactly one of key or password, a bad pin), required fields, defaults, unknown keys, placeholders, a context name other than the three, bad connection names, duplicate connection names, unknown project ids in `branches`, `default_context` not in the catalog, two entries sharing a file; every problem reported together.
+  - Validation: the `ssh` section (host, user and a password secret required, a bad pin), required fields, defaults, unknown keys, placeholders, a context name other than the three, bad connection names, duplicate connection names, unknown project ids in `branches`, `default_context` not in the catalog, two entries sharing a file; every problem reported together.
   - `access`: a `remote` connection with a password field is rejected; `binary`/`bin_dir` are rejected with `tunnel`; the default is `tunnel`; both modes yield the same check result for the same fake datastore.
   - The remote runner: a command that is not a typed template is refused; a parameter that does not match its pattern is refused; no shell, TTY or `sudo` is ever requested; the time and output limits apply.
   - Sessions: a new session starts in the start context; two sessions are independent; a switch needs confirmation, runs the target's check first, and leaves the active context unchanged when declined, refused or failed; a client that cannot elicit is refused.

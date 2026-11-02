@@ -14,8 +14,8 @@ Status key: **A** = build Slice A (first slice, [plan](../../tasks/plan.md)); **
 | `workbench project remove` | Remove a project | `SPEC-cli` | A |
 | `workbench storage status` | Check Memgraph and what is stored | `SPEC-cli`, `SPEC-storage` | wired (`storage`) |
 | `workbench mcp start \| serve \| stop \| restart \| status \| logs \| connect` | Run and manage the MCP server | `SPEC-core` | wired (`core`) |
-| `workbench context check` | Check a context's connections | `SPEC-cli`, `SPEC-contexts` | wired (`contexts`) |
-| `workbench context sync` | Create or move a context's branch worktrees | `SPEC-cli`, `SPEC-contexts` | wired (`contexts`) |
+| `workbench context check` | Check a context's connections | `SPEC-cli`, `SPEC-contexts` | later (its `code` line needs `graph`) |
+| `workbench context sync` | Create or move a context's branch worktrees | `SPEC-cli`, `SPEC-contexts` | later (indexes the view, needs `graph`) |
 | `workbench index` | Build and update the AST data | `SPEC-cli` (`SPEC-index` to write) | later |
 | `workbench watch [start] \| stop \| status \| logs \| flush` | Keep the index fresh | `SPEC-cli` (`SPEC-index` to write) | later |
 | `workbench semantic add \| revise \| retract \| prune \| generate \| list \| show` | Annotations on AST nodes | `SPEC-cli` (`SPEC-semantic-layer` to write) | later |
@@ -86,7 +86,7 @@ Removes the entry and keeps the memory folder, so re-adding finds both files. Wo
 workbench storage status
 ```
 
-Read-only. Prints Memgraph's `host:port` and namespace, whether it answers and how fast, each module's schema version, and per view the counts of files, nodes, edges and annotations. Needs only the workspace config. Applies no migrations. If unreachable: exit `1`, names host and port, hints `docker run -p 7687:7687 memgraph/memgraph`, no secret in the message.
+Read-only. Prints Memgraph's `host:port` and namespace, whether it answers and how fast, each module's schema version, and per view the counts of files, nodes, edges and annotations. Needs only the workspace config. Applies no migrations. If unreachable: exit `1`, names host and port, hints `docker run -p 127.0.0.1:7687:7687 memgraph/memgraph`, no secret in the message.
 
 ## `mcp`
 

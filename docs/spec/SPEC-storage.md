@@ -18,10 +18,10 @@ Depends on [`core`](SPEC-core.md) (approved) and reads the `storage` block of th
 10. **One storage per person.** There is no shared server: Memgraph runs on the person's own machine. A `storage.namespace` keeps several of that person's workspaces apart on one local Memgraph.
 11. `workbench init` writes the whole `storage` block into the new workspace's config: `host: localhost`, `port: 7687` and a unique `namespace` (the folder name plus four random hexadecimal characters), so the settings are visible and editable and two workspaces never share data by accident. A config that lacks the block, or a field of it, uses the same defaults (`localhost`, `7687`), and a missing `namespace` is `default`, which is only safe for a single workspace.
 12. Search is a case-insensitive contains-scan with a result limit: `search_code` and annotation search do not rely on a full-text engine. That is acceptable for the first release, and using Memgraph's own text indexes is on the roadmap.
-13. Data is sensitive (code structure, annotations, incident text), so Memgraph should listen only on the person's own machine.
-14. **Memgraph is required.** Workbench does not install, start or stop it: a person runs it, for example with `docker run -p 7687:7687 memgraph/memgraph`. Because `developer-support` is the default mode and needs storage, it will not start until Memgraph answers.
+13. Data is sensitive (code structure, annotations, incident text), so Memgraph should listen only on the person's own machine. Memgraph has no login unless one is set up, so the documented command binds the published port to the loopback address (`-p 127.0.0.1:7687:7687`), never to every interface.
+14. **Memgraph is required.** Workbench does not install, start or stop it: a person runs it, for example with `docker run -p 127.0.0.1:7687:7687 memgraph/memgraph`. Because `developer-support` is the default mode and needs storage, it will not start until Memgraph answers.
 15. For `graph_query`, **the guard is the enforcement**: it rejects every write before the query reaches Memgraph. The query also runs in a read-mode transaction, but that is a second layer only, because it is not confirmed that Memgraph rejects writes in a read-mode transaction. To be confirmed when the adapter is built, and covered by the tests either way.
-16. **One graph per view, so queries cross projects but never views; the guard keeps them inside the workspace and the session's view.** Each view is a complete graph of the workspace; contexts differ by branch, not by project list. Every node carries `namespace`, `view` and `project`. A free-form query must be anchored at a node constrained to `$namespace` and `$view` (both bound by the adapter and reserved), which is enough because relationships never join different namespaces or views. "Partition" means a logical grouping by `project` and `view`, never graph partitioning in the algorithmic sense.
+16. **One graph per view, so queries cross projects but never views; the guard keeps them inside the workspace and the session's view.** Each view is a complete graph of the workspace; contexts differ by branch, not by project list. Every node carries `namespace` and `view`, and project-owned nodes also `project`. A free-form query must be anchored at a node constrained to `$namespace` and `$view` (both bound by the adapter and reserved), which is enough because relationships never join different namespaces or views. "Partition" means a logical grouping by `project` and `view`, never graph partitioning in the algorithmic sense.
 
 ## Objective
 
@@ -61,7 +61,7 @@ Each owner defines its own model and operations. `storage` defines the machinery
 
 ```text
 read the storage block of the workspace config (defaults: localhost:7687, namespace "default")
-  → connect to Memgraph      fail: "cannot reach memgraph at <host>:<port>: <reason>. Start Memgraph, for example 'docker run -p 7687:7687 memgraph/memgraph'"
+  → connect to Memgraph      fail: "cannot reach memgraph at <host>:<port>: <reason>. Start Memgraph, for example 'docker run -p 127.0.0.1:7687:7687 memgraph/memgraph'"
   → read each module's schema version
   → if the database is newer than this workbench      fail: "database schema vN is newer than this workbench supports (vM). Upgrade workbench."
   → apply pending migrations in order
@@ -90,7 +90,7 @@ Opening storage is part of the start-up of both MCP modes (`SPEC-core.md`, "buil
 ### One database per workspace, one graph per view: projects as nodes, connected through service boundaries
 
 - **One database per workspace (the namespace), and in it one graph per view.** A **view** is one checkout of the workspace's projects: their working trees (`working`, what `developer-support` sees) or one context's branches (`context:production`, `context:staging`, `context:testing`, `SPEC-contexts.md`). **Each view is its own complete graph**: a `Project` node for every project, their code nodes, the services their Compose files declare, their connections, and the custom links and nodes people added for that context. Within one view the graph is a single graph, so one Cypher query follows relationships from a node of one project into a node of another. Different views are **different graphs**: they share no nodes or relationships, no relationship ever joins two views, and a query sees exactly one view. Nothing is split into separate databases or shards per project.
-- **Every node carries three properties:** `namespace` (the workspace), `view` (the graph it belongs to: `working` or `context:<name>`) and `project` (the owning project's id).
+- **Every node carries `namespace` (the workspace) and `view` (the graph it belongs to: `working` or `context:<name>`); every node a project owns also carries `project` (the owning project's id).** `Custom` nodes and the cross-project overview relationships belong to no project and carry no `project`.
 - **A partition is a logical grouping, not graph partitioning.** In these specs a *partition* means the nodes that share a `project` and a `view`. It is a way to name the unit a write, a rebuild or a delete works on. It is **not** graph partitioning in the algorithmic sense: no graph is cut, sharded, balanced or stored apart, and it creates no boundary that a query has to respect. Re-indexing one project rewrites that project's group and leaves every other group alone.
 - **A node per project, in every view.** Each project is a `Project` node in each view (carrying the project's `language`, `framework` and `binaries` from the workspace config as properties; binaries create no nodes of their own), and its files, classes, functions and other nodes hang under it. The group also holds the project's content hashes and parser version. **Contexts differ by branch, not by project list:** every context uses the workspace's projects and repositories, each at the context's own branch (`SPEC-contexts.md`), so the code, the Compose files and therefore the services and connections in a context's graph are those of its branch.
 - **Projects connect through their service boundaries.** A connection between projects is a relationship between nodes of different projects in the same graph: a route and the call to it, a Compose service that builds a project, a project that imports another's library. Each one is also summarised as a `LINKS_TO` relationship between the two `Project` nodes. They belong to no project's group. They come from three sources:
@@ -147,7 +147,7 @@ Build:    cargo build --workspace
 Test:     cargo test --workspace                       # the engine and the in-memory fake
 Lint:     cargo clippy --workspace --all-targets -- -D warnings
 Format:   cargo fmt --all
-Memgraph: cargo test --workspace -- --ignored          # needs a local Memgraph (docker run -p 7687:7687 memgraph/memgraph); CI runs it with a service container
+Memgraph: cargo test --workspace -- --ignored          # needs a local Memgraph (docker run -p 127.0.0.1:7687:7687 memgraph/memgraph); CI runs it with a service container
 Status:   cargo run -p workbench -- storage status
 ```
 
@@ -156,7 +156,7 @@ Status:   cargo run -p workbench -- storage status
 ```
 lib/engine/src/storage/
 ├── mod.rs         # re-exports
-├── ports.rs       # Storage, GraphStore, KnowledgeStore, SearchIndex, FlowStore, IncidentStore (operations added by the consumer specs)
+├── ports.rs       # Storage, GraphStore, KnowledgeStore, SearchIndex, FlowStore, IncidentStore (operations added by the consumer specs); kept here, not in the shared `lib/engine/src/ports.rs`, because there are many
 ├── error.rs       # StoreError
 ├── migration.rs   # Migration, the registry, the ordering and "database too new" rule
 ├── status.rs      # StoreStatus, ModuleVersion, ViewCounts

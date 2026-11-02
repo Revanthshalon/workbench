@@ -131,7 +131,7 @@ pub trait MemoryStore {
 }
 pub struct Created(Vec<PathBuf>);             // only files/folders this call made
 pub struct SourceFile { pub name: String, pub content: String, pub truncated: bool }
-pub trait ContextSource { fn read(&self, project: &Path) -> Result<Vec<SourceFile>, Error>; }
+pub trait ProjectContextSource { fn read(&self, project: &Path) -> Result<Vec<SourceFile>, Error>; }
 /// Fails with `NotADirectory` when `project` is not a directory, and with `Invalid { field: "compose" }`
 /// when a given `compose` (relative to the project) does not exist. The engine does no I/O, so these
 /// checks live here.
@@ -185,7 +185,7 @@ Order is memory then config, so the only state a failure can leave is memory fil
 
 - **`WorkspaceFile`** (`.workbench/config.yml`). DTOs mirror the YAML with `#[serde(deny_unknown_fields)]`; `Option` fields use `skip_serializing_if` so absent stays absent. `load` checks `version == 1`, converts DTO → engine types (parse-don't-validate constructors give the field-named errors), then calls `WorkspaceConfig::new`. A missing `path` surfaces as `Invalid { project, field: "path" }`, not a raw serde message (map the serde error text for `missing field` into it). `save` is **atomic** (**LLD decision**): write `config.yml.tmp` in the same directory, `fsync`, `rename` over the target, so a crash or full disk cannot leave a truncated config.
 - **`MemoryDir`**. `create` uses `create_new` per file so an existing file is never overwritten, and records only paths it made (including the folder if it made it). `discard` deletes recorded files, then the folder only if it is now empty and was recorded.
-- **`ContextSource`** (same struct). Reads `README.md`, `CLAUDE.md`, `AGENTS.md` at the project root if they exist and are regular files (symlinks followed, since the spec reads "files at the project root"; reading stays inside the project path); non-UTF-8 files are skipped; content is cut at 20 KB on a char boundary and `SourceFile::truncated` is set. The engine's seed builder adds the `[truncated at 20 KB]` line.
+- **`ProjectContextSource`** (same struct). Reads `README.md`, `CLAUDE.md`, `AGENTS.md` at the project root if they exist and are regular files (symlinks followed, since the spec reads "files at the project root"; reading stays inside the project path); non-UTF-8 files are skipped; content is cut at 20 KB on a char boundary and `SourceFile::truncated` is set. The engine's seed builder adds the `[truncated at 20 KB]` line.
 - **`ProjectInspector`**. Existence checks for the files in the detection table; for `pyproject.toml`, a line scan for `[tool.uv]`, `[tool.uv.`, `[tool.poetry]`, `[tool.poetry.` after `trim()`, marked `// ponytail: header-line match, not a TOML parse; a header inside a multi-line string is a false positive`. Runs nothing and imports nothing from the project.
 - **`GitignoreStore`**. Reads the file; skips the append if a line equals `.workbench/` or `.workbench` after `trim()`; otherwise appends (adding a newline first when the file lacks one); creates the file if missing. Returns whether it changed anything.
 - **`IdSource`**. Four hex digits from `std::hash::RandomState::new().build_hasher().finish()`, which is seeded from the OS.
@@ -202,7 +202,7 @@ Order is memory then config, so the only state a failure can leave is memory fil
 
 ## 8. CLI
 
-`cli.rs`: `Cli { workspace: Option<PathBuf>, command }`, `Command::{Init{out}, Project(ProjectCommand)}`, `ProjectCommand::{Add(AddArgs), List, Remove{id, purge_memory}}`. Enums via `LanguageArg`, `FrameworkArg` and `DependencyManagerArg` with `From` into the engine types. `--workspace` is `global = true`. `init` has no `--platform` and `--index` is not defined, so clap rejects it with exit 2.
+`cli.rs`: `Cli { workspace: Option<PathBuf>, command }`, `Command::{Init{out}, Project(ProjectCommand)}`, `ProjectCommand::{Add(AddArgs), List, Remove{id, purge_memory}}`. Enums via `LanguageArg`, `FrameworkArg` and `DependencyManagerArg` with `From` into the engine types. `--workspace` is a `WorkspaceArgs` struct flattened into every command except `init`, which takes `--out` instead. `init` has no `--platform` and `--index` is not defined, so clap rejects it with exit 2.
 
 `output.rs`: pure functions from reports to `String` (`init_report`, `project_rows`, `purge_preview`), so formatting is unit-tested without a process. `main.rs` stays wiring: parse, locate workspace, build adapters, call the use case, print, map `Err` to `Error: {e}` and exit 1. Progress/diagnostics to stderr, results to stdout. Row format for `project list` follows the spec snippet: tab-separated `id language manager path`; the empty hint goes to stdout.
 
@@ -219,7 +219,7 @@ Fakes live in one `testing` module in the engine compiled only for tests (create
 ## 10. Sequence: `project add ../shared/web --id web`
 
 ```
-CLI            engine::add_project      Inspector   ContextSource   MemoryDir     WorkspaceFile
+CLI            engine::add_project      Inspector   ProjectContextSource   MemoryDir     WorkspaceFile
  │ resolve+canonicalize path
  ├──────────────► is_dir? ─────────────►
  │                 inspect ────────────► (files only)

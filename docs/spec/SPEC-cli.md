@@ -139,7 +139,7 @@ Keeps the index fresh while code changes, including edits made by AI tools. The 
 | `workbench watch logs [-f] [-n N]` | Prints (or follows) the watcher's log. Works after it has stopped. |
 | `workbench watch flush` | Indexes any pending changes right now and waits until done, so the next query sees a just-made edit. If no watcher is running it runs one incremental index itself, so a hook can call it safely. |
 
-- **Process model:** a thread cannot outlive the CLI command, so `watch` starts a detached background process, managed the way `workbench mcp start` is (pid file and a control socket in `.workbench/run/`, directory `0700`, socket `0600`); the watching runs on a thread inside it.
+- **Process model:** a thread cannot outlive the CLI command, so `watch` starts a detached background process, managed the way `workbench mcp start` is (`.workbench/run/watch.pid` and a control socket `.workbench/run/watch.sock`, directory `0700`, socket `0600`); the watching runs on a thread inside it.
 - **What it watches:** the paths of the workspace's projects, ignoring `.workbench/`, `.git/`, anything a project's `.gitignore` excludes, and the usual dependency and build folders (`node_modules`, `.venv`, `target`, `dist`, `__pycache__`). Changes are batched with a short delay (500 ms by default) so a burst of edits is indexed once.
 - **Needs:** the workspace config and Memgraph only. No server config, no secrets, so it works with `developer-support`.
 - **Never:** it never calls an LLM and never changes a project's files. It shares one lock with `workbench index` and the MCP `reindex` tool, so only one indexing run writes at a time; the others wait.
@@ -152,7 +152,7 @@ A read-only check of the storage (`SPEC-storage.md`). It prints where Memgraph i
 
 - It needs only the workspace config, so it works with `developer-support`.
 - It changes nothing and applies no migrations; if the database is newer than this `workbench` it says so.
-- When Memgraph cannot be reached it exits `1` and names its host and port, with the hint to start Memgraph (for example `docker run -p 7687:7687 memgraph/memgraph`), and with no secret in the message.
+- When Memgraph cannot be reached it exits `1` and names its host and port, with the hint to start Memgraph (for example `docker run -p 127.0.0.1:7687:7687 memgraph/memgraph`), and with no secret in the message.
 
 ### `workbench semantic <command>`
 
@@ -187,9 +187,9 @@ For each system the context configures, it opens a connection with that context'
 
 ```text
 context: staging
-  ssh        ok      40 ms   logged in as workbench on vm-staging.internal
-  kubectl    ok      12 ms   cluster reachable, namespace 'billing' found
-  postgres   ok      31 ms   connected as readonly
+  ssh        ok      40 ms   logged in as workbench on vm-staging.internal (host key SHA256:3f9a…)
+  kubectl    ok      12 ms   cluster reachable, namespace 'billing' readable
+  postgres   ok      31 ms   connected as readonly (tunnel)
   redis      failed          connection refused (cache.staging.internal:6379)
   kafka      skipped         not configured
   code       ok      3 projects on release-2.4 (billing-api 3f9a1c2, users 81be0d4, web 5c0e7aa), indexed
@@ -246,6 +246,7 @@ services/cli/
 │   ├── main.rs        # wiring only: parse, build adapters, call engine, print
 │   ├── cli.rs         # clap types (driving adapter): Cli, Command, ProjectCommand, IndexArgs, SemanticCommand
 │   ├── output.rs      # formatting of results and errors
+│   ├── commands/      # one file per command group that outgrows main.rs (context.rs, storage.rs: SPEC-contexts, SPEC-storage)
 │   ├── mcp/           # the MCP server and its life cycle (SPEC-core.md)
 │   ├── watch/         # the background index watcher (this spec; indexing rules in SPEC-index.md)
 │   └── utils/         # banner
@@ -257,8 +258,8 @@ lib/engine/src/
 └── workspace/
     └── ...            # add_project, remove_project, list_projects use cases
 
-lib/engine/src/ports.rs   # + ProjectInspector, GitignoreStore, ServerConfigStore
-lib/adapters/src/         # + project_inspector.rs, gitignore_file.rs, server_config_file.rs
+lib/engine/src/ports.rs   # + ProjectInspector, GitignoreStore
+lib/adapters/src/         # + project_inspector.rs, gitignore_file.rs (the server config adapter, server_config_file.rs, belongs to SPEC-core)
 ```
 
 ### Ports added by this module
@@ -267,11 +268,11 @@ lib/adapters/src/         # + project_inspector.rs, gitignore_file.rs, server_co
 |---|---|
 | `ProjectInspector` | `inspect(path, compose)` fails with `NotADirectory` when `path` is not a directory and with an `Invalid` error naming `compose` when a given Compose file does not exist; otherwise returns what is detectable: language, framework, dependency manager, venv, Compose file. Reads files only. |
 | `GitignoreStore` | `ensure_ignored(root, entry)` appends the entry once, creating the file if missing. |
-| `ServerConfigStore` | `create_template(root)` writes the server config and the context config templates under `.workbench/mcp/`, never overwriting. |
+| `ServerConfigSource` (defined in `SPEC-core.md`) | Gains `create_template(root)`, which writes the server config and the context config templates under `.workbench/mcp/`, never overwriting. Used by `init` once `core` exists. |
 
 Ports for later slices, added when their slice is planned: `LlmClient` (`generate`, `index --annotate`; one adapter per provider), `FileEventSource` (`watch`), `IndexLock` (the single write lock shared by `index`, `watch` and MCP `reindex`) and the watcher's control channel (`flush`, `stop`, `status`).
 
-`WorkspaceStore`, `MemoryStore` and `ContextSource` come from `SPEC-workspace.md`. The `index` and `semantic` commands call engine use cases (`index_projects`, and the annotation use cases) that are defined by `SPEC-index.md` and `SPEC-semantic-layer.md`; the CLI adds no rules of its own for them.
+`WorkspaceStore`, `MemoryStore` and `ProjectContextSource` come from `SPEC-workspace.md`. The `index` and `semantic` commands call engine use cases (`index_projects`, and the annotation use cases) that are defined by `SPEC-index.md` and `SPEC-semantic-layer.md`; the CLI adds no rules of its own for them.
 
 ## Code Style
 
@@ -333,6 +334,7 @@ Follow the existing conventions: doc comments on every public item, no `unwrap` 
 ## Roadmap (not in this spec)
 
 - `workbench project scan <DIR>`: find the projects under a directory and add them in one go. Projects are added one at a time for now.
+- Binary detection: read a project's `binaries` from `pyproject.toml` scripts or `angular.json` instead of hand-written config (needs a TOML and a JSON parser, so a dependency decision; ADR-0002).
 
 ## Open Questions
 

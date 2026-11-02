@@ -65,7 +65,7 @@ Actors: the **developer** (runs the CLI, writes memory and annotations), the **a
 ├── mcp/
 │   ├── config.yml           server config (contexts, default_context, logs.dir)
 │   └── contexts/<name>.yml  per-context branch, connections, credentials
-├── run/                     sockets and pid files (dir 0700, socket 0600)
+├── run/                     mcp-<mode>.sock/.pid, watch.sock/.pid, index.lock (dir 0700, sockets 0600)
 ├── logs/                    server, watcher and session logs (dir 0700, files 0600)
 ├── worktrees/<context>/<project-id>/   branch checkouts for operational analysis
 └── flows/                   one file per confirmed execution flow
@@ -106,7 +106,7 @@ Build order: `workspace → cli, core → contexts, storage, lsp → audit → g
 |---|---|
 | Memgraph must be running; default mode will not start without it | Clear start-up error with the `docker run` hint; `storage status` |
 | Workspace spans several repos and branches | Per-view graphs, per-project groups, worktrees per context |
-| Specs not yet written: `index`, `graph`, `semantic-layer`, `lsp`, `platform-setup`, `dev-support`, `operations`, `data`, `audit` and later modules | Built in order; each reviewed before its build starts |
+| Specs not on `develop`: drafts of `index`, `graph`, `semantic-layer`, `lsp`, `operations`, `data`, `audit`, `execution-flow`, `flow-memory`, `incidents` and `agent-prompts` sit on unmerged `docs/spec-*` branches; `platform-setup` and `dev-support` are not written | Built in order; each draft is rebased onto `develop` (language/framework change) and reviewed before its build starts |
 | Dependencies not yet in `Cargo.toml` (`notify`, `reqwest`) and `deny.toml` allows only MIT, Apache-2.0, Unicode-3.0 | Added by the task that first uses them, with a reviewed licence exception if needed |
 
 ## 9. Related documents

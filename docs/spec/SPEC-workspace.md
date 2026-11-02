@@ -15,7 +15,7 @@ Module `workspace` from the [capability map](capability-map.md). Status: **appro
 9. *(Amendment, from `SPEC-core.md`)* The config also holds the storage settings, under `storage`, because `developer-support` and the CLI need storage without the server config. Workbench has one storage, Memgraph, running on the person's own machine. Its password is referenced by environment variable name, never stored. The meaning of each setting is defined in `SPEC-storage.md`. Every field is optional and has a default; `workbench init` writes the block out in full so the settings are visible.
 10. *(Amendment, from `SPEC-storage.md`)* Docker Compose files feed the overview of how projects connect (in each view, from that checkout's own files). They normally live inside each project, so a project can name its Compose file; a Compose file that spans projects (for example one at the repository root) is listed at the top level of the config. The workspace also has its own `INIT-MEMORY.md`, where a person writes down how the services fit together; it is read as context and is not parsed into links.
 11. *(Readiness fixes)* Loading checks **structure only**; whether a project's `path` exists is checked by the commands that read the project (`index`, `watch`, `lsp`, `mcp`), so `project list` and `project remove` still work when a directory has moved or been deleted. Unknown keys in `config.yml` are rejected. "Loads and saves unchanged" means the *model* is equal after a round trip: comments and key order are not kept, and defaults are not written back for fields that were absent.
-12. *(Amendment: language, framework and binaries)* One project entry covers everything in a repository. It may list its **binaries**, each a `name` and an `entry` file, written by hand in the config and never detected (detection would need `pyproject.toml` and `angular.json` parsers; see ADR-0002 and the roadmap). Binaries are metadata only: they do not get their own memory folder, annotations or Compose mapping, and `project add` has no flag for them. Design: [`language-framework-binaries.md`](language-framework-binaries.md).
+12. *(Amendment: language, framework and binaries)* One project entry covers everything in a repository. It may list its **binaries**, each a `name` and an `entry` file, written by hand in the config and never detected (detection would need `pyproject.toml` and `angular.json` parsers; see ADR-0002 and the roadmaps in `capability-map.md` and `SPEC-cli.md`). Binaries are metadata only: they do not get their own memory folder, annotations or Compose mapping, and `project add` has no flag for them. Design: [`language-framework-binaries.md`](language-framework-binaries.md).
 
 ## Objective
 
@@ -166,12 +166,12 @@ lib/engine/src/
 │   ├── config.rs       # WorkspaceConfig (version, projects) and its validation
 │   ├── scope.rs        # ProjectScope and resolution
 │   └── memory.rs       # memory layout, INIT-MEMORY template and seeding rules
-└── ports.rs            # + WorkspaceStore, MemoryStore, ContextSource, IdSource
+└── ports.rs            # + WorkspaceStore, MemoryStore, ProjectContextSource, IdSource
 
 lib/adapters/src/        # shared driven adapters (new crate)
 ├── lib.rs
 ├── workspace_file.rs   # YAML adapter for WorkspaceStore (.workbench/config.yml)
-└── memory_dir.rs       # filesystem adapter for MemoryStore and ContextSource
+└── memory_dir.rs       # filesystem adapter for MemoryStore and ProjectContextSource
 ```
 
 The engine has no I/O. `services/cli` (the CLI and the MCP server) picks adapters from `lib/adapters` and wires them to the engine; adapters only that binary needs stay in `services/cli`.
@@ -182,7 +182,7 @@ The engine has no I/O. `services/cli` (the CLI and the MCP server) picks adapter
 |---|---|
 | `WorkspaceStore` | `load()` returns a validated `WorkspaceConfig`; `save(&config)`; `create_empty(&config)` creates `.workbench/` and writes the given config, failing if `config.yml` exists (the caller, `init`, decides the content) |
 | `MemoryStore` | `create(project_id, seed)` creates the folder, `INIT-MEMORY.md` and an empty `annotations.yml` if absent, never overwrites, and returns the paths it created; `create_workspace()` does the same for the workspace-level file; `discard(created)` removes exactly those paths (used by `project add` to roll back); `remove(project_id)` deletes the project's whole folder (used only by `project remove --purge-memory`); `list_files(project_id)` lists what `remove` would delete, so the command can print it first |
-| `ContextSource` | `read(project_path)` returns the seed files that exist, each cut at 20 KB with a `truncated` flag the seed builder turns into the marker line |
+| `ProjectContextSource` | Reads one project's own context files (distinct from `WorkspaceContextSource` in `SPEC-contexts.md`, which reads the server config's context files). `read(project_path)` returns the seed files that exist, each cut at 20 KB with a `truncated` flag the seed builder turns into the marker line |
 | `IdSource` | `suffix()` returns four random hexadecimal characters; the engine has no I/O, so `init` takes this port to build the namespace and tests inject a fixed one |
 
 ## Code Style

@@ -5,7 +5,7 @@ The core of Workbench: domain types, ports and use cases. It does no I/O, and ha
 | Module | Contents |
 |--------|----------|
 | `workspace` | The workspace model (`ProjectId`, `Language`, `Framework`, `DependencyManager`, `Project`, `Binary`, `WorkspaceConfig`), validation, LSP precedence, project scope, memory templates and the `add_project`, `list_projects` and `remove_project` use cases |
-| `ports` | Driven ports: `WorkspaceStore`, `MemoryStore`, `ContextSource`, `ProjectInspector`, `GitignoreStore`, `IdSource` |
+| `ports` | Driven ports: `WorkspaceStore`, `MemoryStore`, `ProjectContextSource`, `ProjectInspector`, `GitignoreStore`, `IdSource` |
 | `init` | `init_workspace()`: writes the empty config, workspace memory and the `.gitignore` entry |
 | `error` | `Error` |
 | `testing` | Recording fakes for the ports, compiled for tests only |
