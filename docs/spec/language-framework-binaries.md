@@ -1,6 +1,6 @@
 # Design: project `language`, `framework` and `binaries`
 
-Status: **applied** to the capability map, `SPEC-workspace`, `SPEC-cli`, `SPEC-storage`, the HLD, the LLD and `tasks/` (2026-11-02). After this the specs are the source of truth. Changes the approved [`SPEC-workspace`](SPEC-workspace.md) and Slice A of [`SPEC-cli`](SPEC-cli.md). Once approved, the specs, [LLD](../lld/LLD-workspace-cli.md) and [`tasks/todo.md`](../../tasks/todo.md) are updated to match; this document is not the source of truth after that.
+Status: **approved** (2026-11-02) and applied to the capability map, `SPEC-workspace`, `SPEC-cli`, `SPEC-storage`, the HLD, the LLD and `tasks/` (2026-11-02). After this the specs are the source of truth. Changes the approved [`SPEC-workspace`](SPEC-workspace.md) and Slice A of [`SPEC-cli`](SPEC-cli.md). Once approved, the specs, [LLD](../lld/LLD-workspace-cli.md) and [`tasks/todo.md`](../../tasks/todo.md) are updated to match; this document is not the source of truth after that.
 
 ## Intent
 
@@ -62,7 +62,7 @@ Engine stays free of `serde` (ADR-0001). No new dependencies.
 
 Error wording; the exact `BinaryName` type (reuse the id rules, own newtype); fixture names.
 
-## Calls I made (change any)
+## Calls made (confirmed)
 
 - `entry` is required, relative, and unchecked.
 - Binaries are config-only in Slice A.
