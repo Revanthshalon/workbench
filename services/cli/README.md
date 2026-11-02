@@ -4,20 +4,16 @@ Command-line tool for Workbench, and the way to run and manage the MCP server (`
 
 ## Usage
 
-```sh
-workbench init [--platform <PLATFORM>[,<PLATFORM>...]] [--out <DIR>]
-```
-
-Creates `<DIR>/.workbench/config.yml`, empty for now. It refuses to overwrite an existing file.
-
-| Flag | Values | Default |
-|------|--------|---------|
-| `--platform` | `copilot-cli`, `claude-code`, `codex`; comma-separated or repeated | `copilot-cli,claude-code` |
-| `--out` | A directory | `.` (current directory) |
+Every command, with its options and status, is in the [CLI reference](../../docs/reference/cli.md). Build Slice A (first) covers the workspace commands:
 
 ```sh
-workbench init --platform copilot-cli,claude-code --out ~/work/my-service
+workbench init [--out <DIR>]                  # create .workbench/ (config, workspace memory, .gitignore line)
+workbench project add <PATH> [options]        # detect language, framework and manager; create its memory
+workbench project list
+workbench project remove <ID> [--purge-memory]
 ```
+
+Commands other than `init` find the workspace by searching upward for `.workbench/`; `--workspace <DIR>` overrides. Later slices add `index`, `watch`, `semantic`, `storage status`, `context`, `mcp` and `platform`. Until they are built, only the scaffold's `init` exists, and it writes an empty config.
 
 Storage: Workbench keeps its graph in Memgraph; `workbench storage status` checks it. See the [root README](../../README.md#storage).
 
@@ -25,11 +21,15 @@ Storage: Workbench keeps its graph in Memgraph; `workbench storage status` check
 
 | Path | Role |
 |------|------|
-| `src/main.rs` | Wiring only: parse, build the adapter, call `engine`, print |
-| `src/cli.rs` | Driving adapter: clap types, mapping to `engine::Platform` |
-| `src/adapters/` | Driven adapters implementing `engine` ports (`DirFileStore` implements `ConfigStore`) |
-| `src/utils/` | Small helpers (the banner) |
+| `src/main.rs` | Wiring only: parse, locate the workspace, build adapters, call `engine`, print |
+| `src/cli.rs` | Driving adapter: clap types and their mapping to engine types |
+| `src/output.rs` | Formatting of results and errors (planned, Slice A) |
+| `src/utils/` | Small helpers (the banner, workspace discovery) |
 | `src/mcp/` | The MCP server and its life cycle (planned; see `docs/spec/SPEC-core.md`) |
+| `src/watch/` | The background index watcher (planned; see `docs/spec/SPEC-cli.md`) |
+| `tests/cli.rs` | Runs the built binary against temp directories (planned, Slice A) |
+
+Driven adapters (YAML config, memory folders, gitignore, project inspection) live in `lib/adapters`, not here.
 
 ## MCP server
 

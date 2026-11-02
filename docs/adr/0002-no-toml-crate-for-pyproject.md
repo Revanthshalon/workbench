@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-01), subject to confirmation at Slice A plan review
+Accepted (2026-11-01): no TOML crate for now
 
 ## Context
 

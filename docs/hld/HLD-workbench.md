@@ -49,7 +49,7 @@ Actors: the **developer** (runs the CLI, writes memory and annotations), the **a
 
 ## 4. Runtime view
 
-- **Developer setup** (CLI only): `init` → `project add` (detect language and manager, create memory) → `index` → optional `semantic add`. Needs Memgraph only for `index` and later.
+- **Developer setup** (CLI only): `init` → `project add` (detect language, framework and manager, create memory) → `index` → optional `semantic add`. Needs Memgraph only for `index` and later.
 - **developer-support session:** platform → `mcp connect` → server → engine → Memgraph (graph, annotations), LSP servers started lazily per project, `edit` tools writing into project directories (the one mode that does).
 - **operational-support session:** as above, plus the start context's connection check at start-up, per-session active context, tools reaching kubectl, PostgreSQL, Redis and Kafka through the context's VM, every call written to the session log.
 - **Watcher:** `watch` starts a detached process; a thread inside batches file events (500 ms) and runs the incremental index; `flush` makes the next query see a just-made edit.
@@ -71,7 +71,7 @@ Actors: the **developer** (runs the CLI, writes memory and annotations), the **a
 └── flows/                   one file per confirmed execution flow
 ```
 
-Memgraph holds, per namespace and view: `Project` nodes, code nodes, derived cross-project overview (from Compose, Dockerfiles, shared APIs), annotations, schema versions. Nodes carry `namespace`, `view`, `project`.
+Memgraph holds, per namespace and view: `Project` nodes (carrying framework and binaries), code nodes, derived cross-project overview (from Compose, Dockerfiles, shared APIs), annotations, schema versions. Nodes carry `namespace`, `view`, `project`.
 
 ## 6. Modules and build order
 
