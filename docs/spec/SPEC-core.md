@@ -49,7 +49,7 @@ All take `--workspace <DIR>` (default: search upward for `.workbench/`) and, whe
 | `workbench mcp stop [--mode M \| --all]` | Asks the server to shut down cleanly and waits. Connected shims keep waiting for it (see Shim). |
 | `workbench mcp restart [--mode M]` | `stop` then `start`. Reloads the configs. Connected shims reconnect on their own. |
 | `workbench mcp status [--mode M]` | For each running server: mode, pid, uptime, socket, number of connected clients, log path. Removes stale pid files it finds. |
-| `workbench mcp logs [--mode M] [--session ID \| --sessions] [-f] [-n N]` | By default prints the last `N` lines (default 50) of the mode's latest server log; `-f` keeps following. `--sessions` lists the session logs (session id, start time, context); `--session ID` prints that session's log, rendered for reading (`--raw` prints the JSON Lines as written). Works after the server has stopped. |
+| `workbench mcp logs [--mode M] [--session ID \| --sessions] [-f] [-n N]` | By default prints the last `N` lines (default 50) of the mode's latest server log; `-f` keeps following. `--sessions` lists the session logs (the columns are in `SPEC-audit.md`); `--session ID` prints that session's log, rendered for reading (`--raw` prints the JSON Lines as written). Works after the server has stopped. |
 | `workbench mcp connect [--mode M] [--start]` | The stdio shim for AI platforms: relays between stdin/stdout and the server. Never writes anything to stdout except MCP messages. With no server running it exits with `no <mode> server running; run 'workbench mcp start --mode <mode>'`. `--start` starts one first, and is allowed for `developer-support` only. |
 
 ### Modes and what they load
@@ -95,11 +95,11 @@ There is no TCP or HTTP listener. Nothing is reachable from the network.
 | Log | Written when | Contains |
 |---|---|---|
 | **Server log** (`server-<mode>-<timestamp>.log`) | Always. A new file for every server start, so no rotation is needed. | Start-up steps, the context check result, socket and connection events, restarts, shutdown, errors. |
-| **Session log = the audit record** (`sessions/<session-id>.log`) | `operational-support` only. One file per session. | A record of the session, as JSON Lines: when it began and ended, the context it started in, each tool call (name, arguments, duration, outcome and a short result summary), context switches (with the check result), and errors, including connections that went down. |
+| **Session log = the audit record** (`sessions/<session-id>.log`) | `operational-support` only. One file per session. | A record of the session, as JSON Lines: when it began and ended, the context it started in, each tool call (name, arguments, duration, outcome, a short summary and the result, capped at 64 KB), context switches (with the check result), and errors, including connections that went down. |
 
 - The directory is `logs.dir` in the server config, relative to the workspace root or absolute; the default is `.workbench/logs`. `developer-support` never reads the server config, so it always uses the default directory and writes only server logs.
 - The session log is the **only** audit record: nothing is copied to Memgraph. The server only appends to it and never rewrites or deletes events. It is JSON Lines so `flow-memory` and other readers can parse it; `workbench mcp logs --session ID` renders it for people and `--raw` prints the lines as written. The event format is defined in `SPEC-audit.md`.
-- A session is identified by the shim's token, so a session that continues across a `restart` keeps appending to the same file.
+- A session is identified by the shim's token, so a session that continues across a `restart` keeps appending to the same file. On start the server also closes, in the audit record, any session left open by an earlier server (`SPEC-audit.md`, "The session boundary"). An event that cannot be written makes the call it belongs to fail, so nothing runs unrecorded.
 - `workbench mcp logs` finds the directory the same way. For `operational-support` it reads `logs.dir` from the server config; if the config cannot be read it says so and falls back to the default directory.
 - Logs can hold query results and log lines from production systems, so the directory is created `0700` and every file `0600`. No secret ever appears in a log: secrets are never exposed outside the point where a connection is opened.
 - There is no rotation and no automatic cleanup in the first release; see the Roadmap.
