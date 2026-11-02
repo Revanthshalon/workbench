@@ -9,6 +9,7 @@ An MCP server (and companion CLI) that turns your services, logs, config and run
 | Path | Crate / binary | Purpose |
 |------|----------------|---------|
 | [`lib/engine`](lib/engine/README.md) | `engine` | Core: domain, ports, use cases |
+| `lib/adapters` | `adapters` | Shared driven adapters: YAML config, memory folders, gitignore, project inspection (planned, Slice A) |
 | [`services/cli`](services/cli/README.md) | `workbench` | The one binary: the CLI and the MCP server (`workbench mcp`) |
 | [`docs`](docs/README.md) | | ADRs, HLD, LLD, specs |
 
