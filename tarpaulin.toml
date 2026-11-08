@@ -1,0 +1,14 @@
+# cargo-tarpaulin configuration. Run with: cargo tarpaulin
+# CI uses tarpaulin.ci.toml: cargo tarpaulin --config tarpaulin.ci.toml
+# Docs: https://github.com/xd009642/tarpaulin
+
+[default]
+workspace = true
+all-features = true
+# LLVM engine works on macOS and Linux; ptrace is Linux-only.
+engine = "Llvm"
+follow-exec = true
+test-timeout = "5m"
+output-dir = "target/coverage"
+out = ["Html", "Lcov"]
+exclude-files = ["**/tests/*", "**/benches/*", "**/build.rs"]

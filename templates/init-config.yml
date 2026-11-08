@@ -1,0 +1,7 @@
+# .workbench/config.yml
+version: 1
+storage:
+  host: localhost
+  port: 7687
+  namespace: {namespace}
+projects: []

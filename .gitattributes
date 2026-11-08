@@ -1,0 +1,38 @@
+# Normalize text files and line endings
+* text=auto
+
+# Markdown, Rust, and Cargo
+*.md       text diff=markdown
+*.rs       text diff=rust
+*.toml     text diff=toml
+Cargo.lock  text
+
+# TypeScript / JavaScript
+*.ts       text diff=typescript
+*.tsx      text diff=typescript
+*.js       text diff=javascript
+*.jsx      text diff=javascript
+*.mjs      text diff=javascript
+*.cjs      text diff=javascript
+
+# Angular and web files
+*.html     text diff=html
+*.css      text diff=css
+*.scss     text diff=css
+*.json     text diff=json
+
+# Keep Windows scripts using CRLF
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Common binary files
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.woff      binary
+*.woff2     binary
+
+

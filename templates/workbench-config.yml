@@ -1,0 +1,54 @@
+# .workbench/config.yml
+version: 1
+lsp:                         # optional workspace-wide defaults, per language
+  python:
+    server: basedpyright
+storage:                     # written by `workbench init`; every field optional. Workbench's one storage is Memgraph, on your own machine
+  host: localhost            # default localhost
+  port: 7687                 # default 7687
+  namespace: billing-3f9a    # one per workspace, unique on this Memgraph; written by `workbench init`
+  # username: workbench      # optional; Memgraph has no login unless one is set up
+  # password_env: MEMGRAPH_PASSWORD   # the variable's name, never the password
+compose:                     # optional; Compose files that span projects, for example one at the repository root
+  - path: docker-compose.yml # relative to the workspace root, or absolute
+    services:                # optional: match a service to a project when its build context cannot be resolved
+      billing: billing-api
+semantic:                    # optional; used only when the CLI is asked to use an LLM
+  llm:
+    provider: claude           # copilot-cli | ollama | claude
+    model: claude-sonnet-5-5
+    api_key_env: ANTHROPIC_API_KEY   # claude only: the variable's name, never the key
+projects:
+  - id: billing-api            # stable, kebab-case, unique
+    path: services/billing     # relative to the workspace root
+    language: python
+    dependency_manager: uv     # python: poetry | uv; typescript: npm | pnpm | yarn | bun
+    binaries:                  # optional; hand-written, never detected
+      - name: api
+        entry: src/billing/api.py     # relative to the project
+      - name: worker
+        entry: src/billing/worker.py
+    compose: docker-compose.yml  # optional; path inside the project. Default: the first of compose.yaml,
+                                 # compose.yml, docker-compose.yaml, docker-compose.yml at the project root
+    environment:               # optional; how to activate the project's environment
+      venv: .venv
+      activate: uv run
+    lsp:                       # optional; overrides the workspace and catalog defaults
+      enabled: true
+      server: basedpyright
+      command: [basedpyright-langserver, --stdio]   # optional launch override
+      settings:                # passed to the server as-is
+        python.analysis.typeCheckingMode: standard
+      servers:                 # optional: one entry per file kind; the fields above are shorthand for the project's main kind
+        yaml: {server: yaml-language-server}
+        dockerfile: {enabled: false}
+  - id: web-app
+    path: ../shared/web        # may sit outside the workspace root
+    language: typescript
+    framework: angular         # optional; angular only for now
+    dependency_manager: pnpm
+    binaries:
+      - name: admin
+        entry: projects/admin/src/main.ts
+      - name: shop
+        entry: projects/shop/src/main.ts
