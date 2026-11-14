@@ -296,6 +296,10 @@ fn index_project(
         src_is_package,
     };
     let modules = project_modules(&naming, &all_files, context.logger);
+    let candidates = match &deleted_candidates {
+        Some(deleted) => modules.with_name_affected(&naming, candidates, deleted),
+        None => candidates,
+    };
 
     let files = ProjectFiles {
         project: &project.id,
@@ -390,6 +394,42 @@ struct ProjectModules {
     losers: HashSet<String>,
     /// The module name of every file.
     names: HashSet<String>,
+    /// Every file with its module name.
+    files: Vec<ModuleFile>,
+}
+
+impl ProjectModules {
+    /// Under `--changed`: the changed files, plus every file whose ids those changes
+    /// can affect without its own contents changing. That is a file sharing a changed
+    /// or deleted file's module name (a collision may have started or ended), and the
+    /// package file of a changed module's parent (one of its names may now equal a
+    /// new submodule, or no longer). The hash check still skips the ones that turn out
+    /// unchanged.
+    fn with_name_affected(
+        &self,
+        naming: &ModuleNaming<'_>,
+        changed: Vec<PathBuf>,
+        deleted: &[PathBuf],
+    ) -> Vec<PathBuf> {
+        let mut affected: HashSet<String> = HashSet::new();
+        for path in changed.iter().chain(deleted) {
+            let module = naming.module_name(&index_path(path));
+            if let Some((parent, _)) = module.rsplit_once('.') {
+                affected.insert(parent.to_owned());
+            }
+            affected.insert(module);
+        }
+        let mut paths: Vec<PathBuf> = changed;
+        paths.extend(
+            self.files
+                .iter()
+                .filter(|file| affected.contains(&file.module))
+                .map(|file| PathBuf::from(&file.path)),
+        );
+        paths.sort();
+        paths.dedup();
+        paths
+    }
 }
 
 /// How a project's files are named as modules.
@@ -397,6 +437,20 @@ struct ModuleNaming<'a> {
     project: &'a str,
     extensions: &'a [&'a str],
     src_is_package: bool,
+}
+
+impl ModuleNaming<'_> {
+    /// The module name of the file at `path` (relative, `/`-separated).
+    fn module_name(&self, path: &str) -> String {
+        SourceFile {
+            project: self.project,
+            path,
+            src_is_package: self.src_is_package,
+            disambiguator: None,
+            modules: None,
+        }
+        .module_name()
+    }
 }
 
 /// The module names of the project's files, and the files that lose a module-name
@@ -410,14 +464,7 @@ fn project_modules(
         .iter()
         .map(|relative| {
             let path = index_path(relative);
-            let module = SourceFile {
-                project: naming.project,
-                path: &path,
-                src_is_package: naming.src_is_package,
-                disambiguator: None,
-                modules: None,
-            }
-            .module_name();
+            let module = naming.module_name(&path);
             ModuleFile {
                 stub: path.ends_with(".pyi"),
                 path,
@@ -439,7 +486,8 @@ fn project_modules(
     }
     ProjectModules {
         losers,
-        names: modules.into_iter().map(|file| file.module).collect(),
+        names: modules.iter().map(|file| file.module.clone()).collect(),
+        files: modules,
     }
 }
 

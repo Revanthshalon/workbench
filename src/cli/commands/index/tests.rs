@@ -88,6 +88,7 @@ impl Scratch {
     }
 
     /// Indexes with one parser for every language.
+    // craftsman-ignore: PARAM001 — a short form of `run`, whose `Run` struct carries the rest
     fn index_with(
         &self,
         args: &IndexArgs,
@@ -179,6 +180,17 @@ impl Storage for FakeStorage {
 
     fn describe(&self) -> String {
         "Storage: fake".to_owned()
+    }
+}
+
+/// Storage that holds one stored hash, for `api`'s `path`, from `contents`.
+fn stored_one(path: &str, contents: &[u8]) -> FakeStorage {
+    FakeStorage {
+        stored: HashMap::from([(
+            "api".to_owned(),
+            HashMap::from([(path.to_owned(), content_hash(contents))]),
+        )]),
+        ..FakeStorage::default()
     }
 }
 
@@ -401,15 +413,23 @@ fn collisions_are_computed_from_every_file_even_with_changed() -> CliResult<()> 
     )?;
 
     let written = storage.written.borrow();
-    let graphs = &written[0].1.upserted;
-    assert_eq!(graphs.len(), 1);
-    assert_eq!(graphs[0].module, "api:pkg.x@pkg/x.py");
-    assert!(
-        graphs[0]
+    // The collision's other file is re-checked too; nothing is stored here, so it is
+    // parsed as new. What matters is that the edited loser keeps its suffix.
+    let loser = written[0]
+        .1
+        .upserted
+        .iter()
+        .find(|graph| graph.path == "pkg/x.py");
+    assert_eq!(
+        loser.map(|graph| graph.module.as_str()),
+        Some("api:pkg.x@pkg/x.py")
+    );
+    assert!(loser.is_some_and(|graph| {
+        graph
             .nodes
             .iter()
             .any(|node| node.id == "api:pkg.x.New@pkg/x.py")
-    );
+    }));
     assert!(
         scratch
             .log()
@@ -558,6 +578,54 @@ fn a_failed_cleanup_is_a_problem() -> CliResult<()> {
         ["the data of projects removed from the config could not be deleted"]
     );
     assert!(scratch.log().contains("cleanup refused"));
+    Ok(())
+}
+
+#[test]
+fn changed_also_reparses_files_whose_names_a_change_affects() -> CliResult<()> {
+    let scratch = Scratch::new("changed-names", TWO_PROJECTS)?;
+    let api = scratch.0.join("api");
+    scratch.write("api/pkg/__init__.py", "settings = 1\n")?;
+    git(&api, &["init", "-q"])?;
+    git(&api, &["add", "."])?;
+    git(&api, &["commit", "-q", "-m", "initial"])?;
+    // The last run stored `pkg/__init__.py` alone, before `pkg/settings.py` existed.
+    let storage = stored_one("pkg/__init__.py", b"settings = 1\n");
+    scratch.write("api/pkg/settings.py", "")?;
+
+    scratch.run(
+        &IndexArgs {
+            changed: true,
+            ..only("api")
+        },
+        &Run {
+            storage: &storage,
+            python: &PythonParser,
+            typescript: &TextParser,
+            interrupted: false,
+        },
+    )?;
+
+    let written = storage.written.borrow();
+    let mut paths: Vec<&str> = written[0]
+        .1
+        .upserted
+        .iter()
+        .map(|graph| graph.path.as_str())
+        .collect();
+    paths.sort_unstable();
+    assert_eq!(paths, ["pkg/__init__.py", "pkg/settings.py"]);
+    let init = written[0]
+        .1
+        .upserted
+        .iter()
+        .find(|graph| graph.path == "pkg/__init__.py");
+    assert!(init.is_some_and(|graph| {
+        graph
+            .nodes
+            .iter()
+            .any(|node| node.id == "api:pkg.settings@pkg/__init__.py")
+    }));
     Ok(())
 }
 

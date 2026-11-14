@@ -200,7 +200,7 @@ workbench index --log-graph    # write each parsed file's graph to the log
 |---|---|
 | `--id <ID>` | Index only this project. Default: every project. |
 | `--full` | Re-parse every file, ignoring stored content hashes. Deleted files are still removed. |
-| `--changed` | Only files git reports as modified, staged, deleted or untracked since the last commit. Cannot be combined with `--full`. |
+| `--changed` | Only files git reports as modified, staged, deleted or untracked since the last commit, plus files whose ids those changes can affect (a file sharing a changed file's module name, and the changed module's parent package). Cannot be combined with `--full`. |
 | `--force` | Parse files of any size. Without it, files over 1 MiB are skipped. Symbolic links are always skipped. |
 | `--log-graph` | Write every parsed file's graph (its nodes, edges and references) to `.workbench/logs/workbench-YYYY-MM-DD.log`, for checking what the parser produced. Unchanged files are not parsed, so they are not logged. |
 
