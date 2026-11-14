@@ -231,3 +231,32 @@ fn clean_files_parse_fully() {
         ParseOutcome::Parsed(_)
     ));
 }
+
+#[test]
+fn very_long_expressions_do_not_overflow_the_stack() {
+    let source = format!("x = 1{}\n\ndef after(): ...\n", " + 1".repeat(50_000));
+    let graph = parse_python("api", "generated.py", &source).graph;
+    assert_eq!(
+        graph.nodes.last().map(|node| node.id.as_str()),
+        Some("api:generated.after")
+    );
+}
+
+#[test]
+fn relative_imports_to_exactly_above_the_top_keep_their_dots() {
+    let graph = parse_python("api", "a/b.py", "from .. import y\nfrom ..c import z\n").graph;
+    assert_eq!(targets(&graph), ["..y", "..c.z"]);
+}
+
+#[test]
+fn relative_imports_in_a_root_init_resolve_from_the_top() {
+    for path in ["__init__.py", "src/__init__.py"] {
+        let graph = parse_python(
+            "api",
+            path,
+            "from .y import z\nfrom . import x\nfrom .. import w\n",
+        )
+        .graph;
+        assert_eq!(targets(&graph), ["y.z", "x", "..w"], "in {path}");
+    }
+}

@@ -27,6 +27,24 @@ const STUB_EXTENSION: &str = ".pyi";
 const STUB_SUFFIX: &str = "@pyi";
 /// `__init__.py` (or `.pyi`) makes its directory a package.
 const PACKAGE_FILE_STEM: &str = "__init__";
+/// The statements a definition or import can sit inside, besides a class or function.
+/// The walk only descends into these (and into tree-sitter's `ERROR` nodes), never
+/// into expressions, so deeply nested expressions cannot overflow the stack.
+const STATEMENT_CONTAINERS: [&str; 13] = [
+    "block",
+    "if_statement",
+    "elif_clause",
+    "else_clause",
+    "try_statement",
+    "except_clause",
+    "finally_clause",
+    "with_statement",
+    "for_statement",
+    "while_statement",
+    "match_statement",
+    "case_clause",
+    "ERROR",
+];
 
 /// Parses Python files with tree-sitter.
 #[derive(Debug)]
@@ -209,7 +227,8 @@ impl Walk<'_> {
                     self.refer(scope.reference(import.target, ReferenceKind::Imports, child));
                 }
             }
-            _ => self.visit(child, scope),
+            kind if STATEMENT_CONTAINERS.contains(&kind) => self.visit(child, scope),
+            _ => {}
         }
     }
 
@@ -382,7 +401,8 @@ fn resolve_relative(relative: Syntax<'_>, module: &ModuleContext<'_>) -> String 
     }
     let levels_up = dots.saturating_sub(1);
     let package = &module.package;
-    if levels_up > package.len() {
+    // Climbing to or past the top package leaves no package to name: keep the dots.
+    if levels_up > 0 && levels_up >= package.len() {
         return format!("{}{rest}", ".".repeat(dots));
     }
     join(&package[..package.len() - levels_up].join("."), &rest)
@@ -399,8 +419,12 @@ fn join(base: &str, name: &str) -> String {
 }
 
 /// The package a module's relative imports start from: the module's parent, or the
-/// module itself for a package's `__init__`.
+/// module itself for a package's `__init__`. A root `__init__` (named `__init__`)
+/// sits at the top, so its package is empty.
 fn package_parts(module_name: &str, is_package: bool) -> Vec<&str> {
+    if module_name == PACKAGE_FILE_STEM {
+        return Vec::new();
+    }
     let mut parts: Vec<&str> = module_name
         .split('.')
         .filter(|part| !part.is_empty())
