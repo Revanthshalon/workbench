@@ -17,6 +17,7 @@ use crate::{
 
 mod cli;
 mod errors;
+mod graph;
 
 /// Exit codes: 0 on success, 1 when the command failed. Usage errors exit with 2 (clap).
 fn main() -> ExitCode {
