@@ -7,7 +7,8 @@
 //!
 //! Imports and base classes become references, resolved as far as the file alone
 //! allows: relative imports against the file's package, and base classes through the
-//! names the module binds by imports and class definitions.
+//! names bound where the class is defined. The walk keeps those bindings per scope,
+//! in source order, as Python does.
 
 use std::collections::HashMap;
 
@@ -98,12 +99,11 @@ fn parse_python_checked(file: &SourceFile<'_>, source: &str) -> Option<PythonPar
         package: package_parts(&module_name, is_package),
         source: source.as_bytes(),
     };
-    let names = name_map(tree.root_node(), &module);
     let mut walk = Walk {
         project: file.project,
         stub: file.path.ends_with(STUB_EXTENSION),
         module: &module,
-        names: &names,
+        frames: vec![Frame::default()],
         graph: &mut graph,
     };
     let mut module_scope = Scope::new(module_name.clone(), walk.graph.module.clone(), false);
@@ -197,12 +197,20 @@ impl Scope {
     }
 }
 
+/// The names one scope has bound so far, mapped to the dotted names they stand for.
+#[derive(Default)]
+struct Frame {
+    names: HashMap<String, String>,
+    /// A class body: its names are not visible to functions nested inside it.
+    is_class: bool,
+}
+
 struct Walk<'a> {
     project: &'a str,
     stub: bool,
     module: &'a ModuleContext<'a>,
-    /// Local names bound at module level, mapped to the dotted names they stand for.
-    names: &'a HashMap<String, String>,
+    /// One frame per scope being walked; the first is the module.
+    frames: Vec<Frame>,
     graph: &'a mut FileGraph,
 }
 
@@ -226,6 +234,9 @@ impl Walk<'_> {
             },
             "import_statement" | "import_from_statement" => {
                 for import in imports(child, self.module) {
+                    if let Some((local, dotted)) = import.binding {
+                        self.bind(local, dotted);
+                    }
                     self.refer(scope.reference(import.target, ReferenceKind::Imports, child));
                 }
             }
@@ -273,15 +284,75 @@ impl Walk<'_> {
             kind: EdgeKind::Contains,
         });
 
-        let mut inner = Scope::new(qualified_name, id, kind == NodeKind::Class);
-        if kind == NodeKind::Class {
-            for base in base_classes(definition, self.names, self.module) {
-                self.refer(inner.reference(base, ReferenceKind::Inherits, definition));
-            }
+        // Bases are evaluated before the class's own name is bound, as in Python.
+        let is_class = kind == NodeKind::Class;
+        let bases = if is_class {
+            self.base_classes(definition)
+        } else {
+            Vec::new()
+        };
+        self.bind(name.to_owned(), qualified_name.clone());
+
+        let mut inner = Scope::new(qualified_name, id, is_class);
+        for base in bases {
+            self.refer(inner.reference(base, ReferenceKind::Inherits, definition));
         }
         if let Some(body) = definition.child_by_field_name("body") {
+            self.frames.push(Frame {
+                names: HashMap::new(),
+                is_class,
+            });
             self.visit(body, &mut inner);
+            self.frames.pop();
         }
+    }
+
+    /// Binds `local` in the scope being walked; a later binding replaces an earlier one.
+    fn bind(&mut self, local: String, dotted: String) {
+        if let Some(frame) = self.frames.last_mut() {
+            frame.names.insert(local, dotted);
+        }
+    }
+
+    /// What `name` stands for where the walk is: the current scope, then enclosing
+    /// function scopes outwards (class bodies further out are not visible), then the
+    /// module.
+    fn resolve(&self, name: &str) -> Option<&str> {
+        let (current, outer) = self.frames.split_last()?;
+        if let Some(found) = current.names.get(name) {
+            return Some(found);
+        }
+        outer
+            .iter()
+            .enumerate()
+            .rev()
+            .filter(|(index, frame)| *index == 0 || !frame.is_class)
+            .find_map(|(_, frame)| frame.names.get(name))
+            .map(String::as_str)
+    }
+
+    /// The dotted names a class inherits from, resolved through the bindings in effect.
+    ///
+    /// Keyword arguments such as `metaclass=M` are not bases; `Generic[T]` counts as
+    /// `Generic`.
+    fn base_classes(&self, class: Syntax<'_>) -> Vec<String> {
+        let Some(arguments) = class.child_by_field_name("superclasses") else {
+            return Vec::new();
+        };
+        let mut cursor = arguments.walk();
+        arguments
+            .named_children(&mut cursor)
+            .filter_map(|argument| match argument.kind() {
+                "subscript" => argument.child_by_field_name("value"),
+                _ => Some(argument),
+            })
+            .filter_map(|base| dotted_name(base, self.module))
+            .map(|dotted| {
+                let (first, rest) = dotted.split_once('.').unwrap_or((&dotted, ""));
+                let resolved = self.resolve(first).unwrap_or(first);
+                join(resolved, rest)
+            })
+            .collect()
     }
 
     fn refer(&mut self, reference: Reference) {
@@ -435,92 +506,6 @@ fn package_parts(module_name: &str, is_package: bool) -> Vec<&str> {
         parts.pop();
     }
     parts
-}
-
-/// The names bound at module level by imports and class definitions, mapped to the
-/// dotted names they stand for.
-fn name_map(root: Syntax<'_>, module: &ModuleContext<'_>) -> HashMap<String, String> {
-    module_level_statements(root)
-        .into_iter()
-        .flat_map(|statement| bindings(statement, module))
-        .collect()
-}
-
-/// Every statement in module scope, including inside `if`, `try` and other blocks,
-/// but not inside function or class bodies.
-fn module_level_statements(root: Syntax<'_>) -> Vec<Syntax<'_>> {
-    let mut statements = Vec::new();
-    let mut pending = vec![root];
-    while let Some(node) = pending.pop() {
-        let mut cursor = node.walk();
-        let children: Vec<Syntax<'_>> = node.named_children(&mut cursor).collect();
-        pending.extend(
-            children
-                .iter()
-                .copied()
-                .filter(|child| !opens_scope(*child)),
-        );
-        statements.extend(children);
-    }
-    statements
-}
-
-fn opens_scope(node: Syntax<'_>) -> bool {
-    matches!(
-        node.kind(),
-        "class_definition" | "function_definition" | "decorated_definition"
-    )
-}
-
-/// The names one module-level statement binds.
-fn bindings(statement: Syntax<'_>, module: &ModuleContext<'_>) -> Vec<(String, String)> {
-    match statement.kind() {
-        "import_statement" | "import_from_statement" => imports(statement, module)
-            .into_iter()
-            .filter_map(|import| import.binding)
-            .collect(),
-        "decorated_definition" => statement
-            .child_by_field_name("definition")
-            .map(|definition| bindings(definition, module))
-            .unwrap_or_default(),
-        "class_definition" => statement
-            .child_by_field_name("name")
-            .map(|name| {
-                let name = module.text(name);
-                let qualified = join(module.name, &name);
-                vec![(name, qualified)]
-            })
-            .unwrap_or_default(),
-        _ => Vec::new(),
-    }
-}
-
-/// The dotted names a class inherits from, resolved through the module's names.
-///
-/// Keyword arguments such as `metaclass=M` are not bases; `Generic[T]` counts as
-/// `Generic`.
-fn base_classes(
-    class: Syntax<'_>,
-    names: &HashMap<String, String>,
-    module: &ModuleContext<'_>,
-) -> Vec<String> {
-    let Some(arguments) = class.child_by_field_name("superclasses") else {
-        return Vec::new();
-    };
-    let mut cursor = arguments.walk();
-    arguments
-        .named_children(&mut cursor)
-        .filter_map(|argument| match argument.kind() {
-            "subscript" => argument.child_by_field_name("value"),
-            _ => Some(argument),
-        })
-        .filter_map(|base| dotted_name(base, module))
-        .map(|dotted| {
-            let (first, rest) = dotted.split_once('.').unwrap_or((&dotted, ""));
-            let resolved = names.get(first).map_or(first, String::as_str);
-            join(resolved, rest)
-        })
-        .collect()
 }
 
 /// The dotted name an `identifier` or `attribute` expression spells, built from its

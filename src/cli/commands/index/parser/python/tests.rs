@@ -61,6 +61,15 @@ fn refs(graph: &FileGraph) -> Vec<(&str, &str, ReferenceKind)> {
         .collect()
 }
 
+fn inherits_targets(graph: &FileGraph) -> Vec<&str> {
+    graph
+        .references
+        .iter()
+        .filter(|reference| reference.kind == ReferenceKind::Inherits)
+        .map(|reference| reference.target.as_str())
+        .collect()
+}
+
 fn targets(graph: &FileGraph) -> Vec<&str> {
     graph
         .references
@@ -316,4 +325,50 @@ fn spaces_inside_dotted_bases_are_ignored() {
         .filter(|(_, _, kind)| *kind == ReferenceKind::Inherits)
         .collect();
     assert_eq!(inherits, [("api:m.C", "a.b.X", ReferenceKind::Inherits)]);
+}
+
+#[test]
+fn bases_use_the_last_binding_in_source_order() {
+    let source = "if A:\n    from a import Base\nfrom b import Base\nclass C(Base): ...\nfrom c import Base\n";
+    assert_eq!(
+        inherits_targets(&parse_python("api", "m.py", source).graph),
+        ["b.Base"]
+    );
+}
+
+#[test]
+fn bases_defined_inside_functions_resolve_to_their_scope() {
+    let source = "class A: ...\ndef f():\n    class A: ...\n    class B(A): ...\n";
+    assert_eq!(
+        inherits_targets(&parse_python("api", "m.py", source).graph),
+        ["m.f.A"]
+    );
+}
+
+#[test]
+fn bases_name_the_definition_in_effect() {
+    let source = "class B: ...\nclass B: ...\nclass C(B): ...\n";
+    assert_eq!(
+        inherits_targets(&parse_python("api", "m.py", source).graph),
+        ["m.B#2"]
+    );
+}
+
+#[test]
+fn class_bodies_do_not_enclose_nested_functions() {
+    let source = "class Outer:\n    class Inner: ...\n    def method(self):\n        class Local(Inner): ...\n";
+    assert_eq!(
+        inherits_targets(&parse_python("api", "m.py", source).graph),
+        ["Inner"]
+    );
+}
+
+#[test]
+fn local_imports_bind_inside_their_function() {
+    let source =
+        "def f():\n    from models import Base\n    class C(Base): ...\nclass D(Base): ...\n";
+    assert_eq!(
+        inherits_targets(&parse_python("api", "m.py", source).graph),
+        ["models.Base", "Base"]
+    );
 }
