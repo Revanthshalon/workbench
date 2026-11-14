@@ -1,4 +1,8 @@
 use std::error::Error;
+
+use console::Style;
+
+use crate::cli::table;
 use std::fmt::Display;
 use std::path::PathBuf;
 
@@ -29,6 +33,12 @@ pub enum CliErrors {
     },
     AmbiguousLanguage(PathBuf),
     InvalidOptionCombination(String),
+    UnknownProjectId {
+        id: String,
+        known: Vec<String>,
+    },
+    UnsafeMemoryPath(String),
+    ConfirmationFailed(String),
 }
 
 impl Display for CliErrors {
@@ -76,11 +86,61 @@ impl Display for CliErrors {
                 path.display()
             ),
             CliErrors::InvalidOptionCombination(reason) => write!(f, "{reason}."),
+            CliErrors::UnknownProjectId { id, known } if known.is_empty() => write!(
+                f,
+                "No project with the id `{id}`. The workspace has no projects."
+            ),
+            CliErrors::UnknownProjectId { .. } => write!(f, "{}", self.render(false)),
+            CliErrors::UnsafeMemoryPath(id) => write!(
+                f,
+                "Refusing to delete memory for the id `{id}`: it is not a plain folder name."
+            ),
+            CliErrors::ConfirmationFailed(reason) => write!(
+                f,
+                "Could not ask for confirmation ({reason}). Pass --yes to delete without asking."
+            ),
         }
     }
 }
 
 impl Error for CliErrors {}
+
+impl CliErrors {
+    /// The message for the terminal: text in backticks is highlighted, and lists are bulleted.
+    pub fn render(&self, colors: bool) -> String {
+        match self {
+            CliErrors::UnknownProjectId { id, known } if !known.is_empty() => {
+                let mut message = highlight_code(
+                    &format!("No project with the id `{id}`. \nKnown ids:"),
+                    colors,
+                );
+                for known_id in known {
+                    message.push('\n');
+                    message.push_str(&table::bullet(
+                        &table::paint(&Style::new().cyan().bold(), known_id, colors),
+                        colors,
+                    ));
+                }
+                message
+            }
+            _ => highlight_code(&self.to_string(), colors),
+        }
+    }
+}
+
+/// Colours every `quoted` part of `text`, such as ids and commands, keeping the backticks.
+fn highlight_code(text: &str, colors: bool) -> String {
+    text.split('`')
+        .enumerate()
+        .map(|(index, part)| {
+            if index % 2 == 1 {
+                table::paint(&Style::new().cyan(), &format!("`{part}`"), colors)
+            } else {
+                part.to_owned()
+            }
+        })
+        .collect()
+}
 
 impl From<std::io::Error> for CliErrors {
     fn from(value: std::io::Error) -> Self {

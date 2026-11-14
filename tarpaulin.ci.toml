@@ -1,0 +1,18 @@
+# cargo-tarpaulin CI configuration. Run with: cargo tarpaulin --config tarpaulin.ci.toml
+# Machine-readable reports (Cobertura XML, LCOV) for CI tooling.
+
+[ci]
+workspace = true
+all-features = true
+engine = "Llvm"
+follow-exec = true
+test-timeout = "5m"
+output-dir = "target/coverage"
+out = ["Xml", "Lcov"]
+# Coverage gate: enable once real code and tests exist (web-server is a stub).
+# fail-under = 60.0
+exclude-files = [
+    "**/tests/*",
+    "**/benches/*",
+    "**/build.rs",
+]

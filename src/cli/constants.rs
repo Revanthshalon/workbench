@@ -14,6 +14,7 @@ pub const WORKBENCH_DIRECTORY: &str = ".workbench";
 pub const WORKBENCH_CONFIG_FILE: &str = "config.yml";
 pub const WORKBENCH_MEMORY_DIRECTORY: &str = "memory";
 pub const WORKBENCH_INIT_MEMORY_FILE: &str = "INIT-MEMORY.md";
+pub const PROJECT_ANNOTATIONS_FILE: &str = "annotations.yml";
 pub const WORKBENCH_MCP_DIRECTORY: &str = "mcp";
 pub const WORKBENCH_MCP_CONFIG_FILE: &str = "config.yml";
 pub const WORKBENCH_CONTEXTS_DIRECTORY: &str = "contexts";
@@ -24,12 +25,14 @@ pub const GITIGNORE_FILE: &str = ".gitignore";
 pub const GITIGNORE_ENTRY: &str = ".workbench/";
 
 pub const NAMESPACE_KEY: &str = "namespace:";
+pub const PROJECT_ID_PLACEHOLDER: &str = "{id}";
 pub const NAMESPACE_PLACEHOLDER: &str = "{namespace}";
 pub const CONTEXT_NAME_PLACEHOLDER: &str = "{name}";
 pub const DEFAULT_NAMESPACE_PREFIX: &str = "workspace";
 
 pub const WORKBENCH_CONFIG_TEMPLATE: &str = include_str!("../../templates/init-config.yml");
 pub const WORKBENCH_INIT_MEMORY_TEMPLATE: &str = include_str!("../../templates/init-memory.md");
+pub const PROJECT_MEMORY_TEMPLATE: &str = include_str!("../../templates/project-memory.md");
 pub const WORKBENCH_CONTEXT_TEMPLATE: &str = include_str!("../../templates/init-context.yml");
 pub const WORKBENCH_MCP_CONFIG_TEMPLATE: &str = include_str!("../../templates/init-mcp-config.yml");
 

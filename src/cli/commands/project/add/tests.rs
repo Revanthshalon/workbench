@@ -6,7 +6,7 @@ use std::{
 
 use clap::Parser;
 
-use super::{AddArgs, add_project};
+use super::{AddArgs, add_project, summary};
 use crate::cli::{
     Cli, Commands,
     commands::project::{
@@ -130,6 +130,70 @@ fn language_is_inferred_from_explicit_dependency_manager_or_framework() -> CliRe
     assert!(config.contains(
         "    language: typescript\n    framework: angular\n    dependency_manager: yarn\n"
     ));
+    Ok(())
+}
+
+#[test]
+fn creates_project_memory_and_keeps_existing_notes() -> CliResult<()> {
+    let workspace = Workspace::new("memory", EMPTY_CONFIG)?;
+    for project in ["api", "web"] {
+        workspace.write(&format!("{project}/pyproject.toml"), "")?;
+        workspace.write(&format!("{project}/uv.lock"), "")?;
+    }
+    workspace.write(".workbench/memory/web/INIT-MEMORY.md", "my notes")?;
+
+    workspace.add(&args("api"))?;
+    workspace.add(&args("web"))?;
+
+    let memory =
+        |relative: &str| fs::read_to_string(workspace.0.join(".workbench/memory").join(relative));
+    assert!(memory("api/INIT-MEMORY.md")?.starts_with("# Project memory: api\n"));
+    assert_eq!(memory("api/annotations.yml")?, "");
+    assert_eq!(memory("web/INIT-MEMORY.md")?, "my notes");
+    assert_eq!(memory("web/annotations.yml")?, "");
+    Ok(())
+}
+
+#[test]
+fn rejected_project_gets_no_memory() -> CliResult<()> {
+    let workspace = Workspace::new("memory-rejected", EMPTY_CONFIG)?;
+    workspace.write("3d-viewer/package.json", "{}")?;
+    workspace.write("3d-viewer/package-lock.json", "{}")?;
+
+    assert!(workspace.add(&args("3d-viewer")).is_err());
+    assert!(!workspace.0.join(".workbench/memory").exists());
+    Ok(())
+}
+
+#[test]
+fn summary_shows_the_added_project_as_a_table() -> CliResult<()> {
+    let workspace = Workspace::new("summary", EMPTY_CONFIG)?;
+    workspace.write("services/billing/pyproject.toml", "")?;
+    workspace.write("services/billing/uv.lock", "")?;
+
+    let (config, project) = add_project(&args("services/billing"), &workspace.0)?;
+
+    assert_eq!(
+        summary(&config, &project, false),
+        [
+            "Added project billing to .workbench/config.yml",
+            "+--------------------+---------------------------+",
+            "| FIELD              | VALUE                     |",
+            "+--------------------+---------------------------+",
+            "| id                 | billing                   |",
+            "| path               | services/billing          |",
+            "| language           | python                    |",
+            "| dependency_manager | uv                        |",
+            "| activate           | uv run                    |",
+            "| memory             | .workbench/memory/billing |",
+            "+--------------------+---------------------------+",
+        ]
+    );
+
+    let coloured = summary(&config, &project, true);
+    assert!(coloured[4].contains("\u{1b}[36m\u{1b}[1m billing "));
+    assert!(coloured[6].contains("\u{1b}[33m python "));
+    assert!(coloured[7].contains("\u{1b}[35m uv "));
     Ok(())
 }
 

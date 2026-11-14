@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4.6.7", features = ["derive"] }
 console = { version = "0.16.6" }
+dialoguer = { version = "0.12.0", default-features = false }
 indicatif = { version = "0.18.6" }
 serde = { version = "1.0.229" }
 yaml_serde = { version = "0.10.7" }

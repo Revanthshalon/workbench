@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! `workbench`: sets up a workspace of projects and records what it contains.
 
 use std::process::ExitCode;
 
@@ -14,13 +14,18 @@ use crate::{
 
 mod cli;
 mod errors;
-mod mcp;
 
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("error: {error}");
+            let colors = console::colors_enabled_stderr();
+            let prefix = console::Style::new()
+                .red()
+                .bold()
+                .force_styling(colors)
+                .apply_to("error:");
+            eprintln!("{prefix} {}", error.render(colors));
             ExitCode::FAILURE
         }
     }

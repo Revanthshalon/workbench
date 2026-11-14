@@ -8,6 +8,8 @@ use crate::cli::{
 pub mod commands;
 pub mod constants;
 pub mod errors;
+pub mod prompt;
+pub mod table;
 pub mod workspace;
 
 #[derive(Debug, Parser)]

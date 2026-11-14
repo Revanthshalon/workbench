@@ -10,6 +10,7 @@ use yaml_serde::{Mapping, Value};
 use crate::cli::{
     constants::{
         DEFAULT_SEQUENCE_INDENT, PROJECTS_KEY, WORKBENCH_CONFIG_FILE, WORKBENCH_DIRECTORY,
+        WORKBENCH_MEMORY_DIRECTORY,
     },
     errors::{CliErrors, CliResult},
 };
@@ -22,10 +23,15 @@ pub struct Workspace {
 }
 
 /// A project already listed in the workspace config.
-#[derive(Debug)]
+///
+/// Fields are read as written, since the file may have been edited by hand.
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct ExistingProject {
     pub id: String,
     pub path: String,
+    pub language: Option<String>,
+    pub framework: Option<String>,
+    pub dependency_manager: Option<String>,
 }
 
 impl Workspace {
@@ -49,21 +55,25 @@ impl Workspace {
         &self.config_path
     }
 
+    /// The directory that holds the per-project memory folders.
+    pub fn memory_path(&self) -> PathBuf {
+        self.root
+            .join(WORKBENCH_DIRECTORY)
+            .join(WORKBENCH_MEMORY_DIRECTORY)
+    }
+
     pub fn projects(&self) -> CliResult<Vec<ExistingProject>> {
         Ok(self
             .parse(&self.config)?
             .iter()
             .map(|project| {
-                let field = |key: &str| {
-                    project
-                        .get(key)
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_owned()
-                };
+                let field = |key: &str| project.get(key).and_then(Value::as_str).map(str::to_owned);
                 ExistingProject {
-                    id: field("id"),
-                    path: field("path"),
+                    id: field("id").unwrap_or_default(),
+                    path: field("path").unwrap_or_default(),
+                    language: field("language"),
+                    framework: field("framework"),
+                    dependency_manager: field("dependency_manager"),
                 }
             })
             .collect())
@@ -91,6 +101,37 @@ impl Workspace {
                 == Some(id);
         if !is_appended {
             return Err(self.invalid("could not add the project to the `projects` list"));
+        }
+
+        fs::write(&self.config_path, &updated)?;
+        self.config = updated;
+        Ok(())
+    }
+
+    /// Removes the project with `id` from the `projects` list and saves the config.
+    ///
+    /// Like [`Self::append_project`], it edits the text so comments and layout survive.
+    pub fn remove_project(&mut self, id: &str) -> CliResult<()> {
+        let projects = self.parse(&self.config)?;
+        let index = projects
+            .iter()
+            .position(|project| project.get("id").and_then(Value::as_str) == Some(id))
+            .ok_or_else(|| CliErrors::UnknownProjectId {
+                id: id.to_owned(),
+                known: Vec::new(),
+            })?;
+        let updated =
+            remove_project_entry(&self.config, index, projects.len()).ok_or_else(|| {
+                self.invalid(
+                    "`projects` must be written as a block list (one `- id:` entry per project)",
+                )
+            })?;
+
+        // Guards the text edit: exactly that one project is gone, the rest are untouched.
+        let mut expected = projects;
+        expected.remove(index);
+        if self.parse(&updated)? != expected {
+            return Err(self.invalid("could not remove the project from the `projects` list"));
         }
 
         fs::write(&self.config_path, &updated)?;
@@ -175,6 +216,38 @@ fn insert_project_entry(config: &str, entry: &str) -> Option<String> {
 
     let entry_lines = entry.lines().map(|line| format!("{indent}{line}"));
     lines.splice(insert_at..insert_at, entry_lines);
+    Some(lines.join("\n") + "\n")
+}
+
+/// Removes the `index`-th of `count` entries from the top-level `projects` block list.
+///
+/// Returns `None` when the list is not a block list with exactly `count` entries.
+fn remove_project_entry(config: &str, index: usize, count: usize) -> Option<String> {
+    let mut lines: Vec<String> = config.lines().map(str::to_owned).collect();
+    let key = format!("{PROJECTS_KEY}:");
+    let key_index = lines.iter().position(|line| line.starts_with(&key))?;
+    let inline = lines[key_index][key.len()..].split('#').next()?.trim();
+    if !inline.is_empty() {
+        return None;
+    }
+
+    let (end, indent) = block_end(&lines, key_index);
+    let starts: Vec<usize> = (key_index + 1..end)
+        .filter(|&line| {
+            lines[line]
+                .strip_prefix(indent.as_str())
+                .is_some_and(|rest| rest.starts_with('-'))
+        })
+        .collect();
+    if starts.len() != count {
+        return None;
+    }
+
+    let entry_end = starts.get(index + 1).copied().unwrap_or(end);
+    lines.drain(starts[index]..entry_end);
+    if count == 1 {
+        lines[key_index] = format!("{key} []");
+    }
     Some(lines.join("\n") + "\n")
 }
 

@@ -4,12 +4,17 @@ use std::{
 };
 
 use clap::Args;
-use console::style;
+use console::{Style, colors_enabled};
 use yaml_serde::{Mapping, Value};
 
 use crate::cli::{
     commands::project::kinds::{DependencyManager, Language, Stack, TypescriptFramework},
+    constants::{
+        PROJECT_ANNOTATIONS_FILE, PROJECT_ID_PLACEHOLDER, PROJECT_MEMORY_TEMPLATE,
+        WORKBENCH_INIT_MEMORY_FILE,
+    },
     errors::{CliErrors, CliResult},
+    table::{self, Kind},
     workspace::Workspace,
 };
 
@@ -60,14 +65,8 @@ pub(super) struct Project {
 
 pub fn run(args: AddArgs) -> CliResult<()> {
     let (workspace, project) = add_project(&args, &env::current_dir()?)?;
-
-    println!(
-        "Added project {} to {}\n",
-        style(&project.id).green(),
-        workspace.config_path().display()
-    );
-    for (label, value) in project.fields().into_iter().skip(1) {
-        println!("  {}  {value}", style(format!("{label:<18}")).dim());
+    for line in summary(&workspace, &project, colors_enabled()) {
+        println!("{line}");
     }
     if args.index {
         eprintln!(
@@ -76,6 +75,39 @@ pub fn run(args: AddArgs) -> CliResult<()> {
         );
     }
     Ok(())
+}
+
+/// The output lines after a project is added: a heading, then its fields as a table.
+fn summary(workspace: &Workspace, project: &Project, colors: bool) -> Vec<String> {
+    let memory_path = workspace.relative_path(&workspace.memory_path().join(&project.id));
+    let rows: Vec<[String; 2]> = project
+        .fields()
+        .into_iter()
+        .map(|(label, value)| [label.to_owned(), value.to_owned()])
+        .chain([["memory".to_owned(), memory_path]])
+        .collect();
+
+    let heading = format!(
+        "{} {} {} {}",
+        table::paint(&Style::new().green().bold(), "Added project", colors),
+        table::paint(&Style::new().cyan().bold(), &project.id, colors),
+        table::paint(&Style::new().dim(), "to", colors),
+        workspace.relative_path(workspace.config_path()),
+    );
+    let mut lines = vec![heading];
+    lines.extend(table::render(
+        ["FIELD", "VALUE"],
+        &rows,
+        |column, row| match (column, row[0].as_str()) {
+            (0, _) => Kind::Label,
+            (_, "id") => Kind::Id,
+            (_, "language") => Kind::Language,
+            (_, "dependency_manager") => Kind::DependencyManager,
+            _ => Kind::Plain,
+        },
+        colors,
+    ));
+    lines
 }
 
 /// Adds the project to the workspace that contains `current_directory`.
@@ -100,8 +132,31 @@ fn add_project(args: &AddArgs, current_directory: &Path) -> CliResult<(Workspace
         }
     }
 
+    // Written before the config entry, so a listed project always has its memory folder.
+    create_memory(&workspace.memory_path().join(&project.id), &project.id)?;
     workspace.append_project(&project.id, project.to_yaml())?;
     Ok((workspace, project))
+}
+
+/// Creates the project's memory folder, keeping any files already in it.
+///
+/// A project that was removed and added again under the same id keeps its notes.
+fn create_memory(memory_path: &Path, id: &str) -> CliResult<()> {
+    fs::create_dir_all(memory_path)?;
+    let files = [
+        (
+            WORKBENCH_INIT_MEMORY_FILE,
+            PROJECT_MEMORY_TEMPLATE.replace(PROJECT_ID_PLACEHOLDER, id),
+        ),
+        (PROJECT_ANNOTATIONS_FILE, String::new()),
+    ];
+    for (name, contents) in files {
+        let path = memory_path.join(name);
+        if !path.exists() {
+            fs::write(path, contents)?;
+        }
+    }
+    Ok(())
 }
 
 /// Fills in every option the user left out.
