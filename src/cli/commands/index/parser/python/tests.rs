@@ -451,3 +451,10 @@ fn a_disambiguated_file_suffixes_every_id_with_its_path() {
     assert_eq!(graph.nodes[1].id, "api:pkg.x.Foo@pkg/x.pyi");
     assert_eq!(graph.nodes[2].id, "api:pkg.x.v@pkg/x.pyi");
 }
+
+#[test]
+fn very_long_dotted_bases_do_not_overflow_the_stack() {
+    let dotted = format!("a{}", ".b".repeat(50_000));
+    let graph = parse_python("api", "m.py", &format!("class C({dotted}): ...\n")).graph;
+    assert_eq!(inherits_targets(&graph), [dotted.as_str()]);
+}

@@ -29,6 +29,13 @@ const STUB_EXTENSION: &str = ".pyi";
 const STUB_SUFFIX: &str = "@pyi";
 /// `__init__.py` (or `.pyi`) makes its directory a package.
 const PACKAGE_FILE_STEM: &str = "__init__";
+/// Assignment targets that unpack into several names.
+const UNPACKING_PATTERNS: [&str; 4] = [
+    "pattern_list",
+    "tuple_pattern",
+    "list_pattern",
+    "list_splat_pattern",
+];
 /// The statements a definition or import can sit inside, besides a class or function.
 /// The walk only descends into these (and into tree-sitter's `ERROR` nodes), never
 /// into expressions, so deeply nested expressions cannot overflow the stack.
@@ -200,6 +207,17 @@ impl Scope {
         }
     }
 
+    /// The qualified name of a definition of `name` here: the second and later
+    /// definitions of the same name get `#2`, `#3`, so ids stay unique.
+    fn qualify(&mut self, name: &str) -> String {
+        let count = self.name_counts.entry(name.to_owned()).or_insert(0);
+        *count += 1;
+        match *count {
+            1 => format!("{}.{name}", self.qualified_name),
+            n => format!("{}.{name}#{n}", self.qualified_name),
+        }
+    }
+
     fn new(qualified_name: String, id: NodeId, is_class: bool) -> Self {
         Self {
             qualified_name,
@@ -248,14 +266,7 @@ impl Walk<'_> {
                 Some(definition) => self.define(definition, child, scope),
                 None => self.visit(child, scope),
             },
-            "import_statement" | "import_from_statement" => {
-                for import in imports(child, self.module) {
-                    if let Some((local, dotted)) = import.binding {
-                        self.bind(local, dotted);
-                    }
-                    self.refer(scope.reference(import.target, ReferenceKind::Imports, child));
-                }
-            }
+            "import_statement" | "import_from_statement" => self.import(child, scope),
             // Only module-level assignments become variables.
             "expression_statement" if self.frames.len() == 1 => self.assign(child),
             kind if STATEMENT_CONTAINERS.contains(&kind) => self.visit(child, scope),
@@ -277,27 +288,17 @@ impl Walk<'_> {
             (_, false) => NodeKind::Function,
         };
 
-        let count = scope.name_counts.entry(name.to_owned()).or_insert(0);
-        *count += 1;
-        let suffix = if *count > 1 {
-            format!("#{count}")
-        } else {
-            String::new()
-        };
-        let qualified_name = format!("{}.{name}{suffix}", scope.qualified_name);
+        let qualified_name = scope.qualify(name);
         let id = self.id(&qualified_name);
-
-        self.graph.nodes.push(Node {
-            id: id.clone(),
-            kind,
-            name: name.to_owned(),
-            span: span(extent),
-        });
-        self.graph.edges.push(Edge {
-            from: scope.id.clone(),
-            to: id.clone(),
-            kind: EdgeKind::Contains,
-        });
+        self.add_node(
+            &scope.id,
+            Node {
+                id: id.clone(),
+                kind,
+                name: name.to_owned(),
+                span: span(extent),
+            },
+        );
 
         // Bases are evaluated before the class's own name is bound, as in Python.
         let is_class = kind == NodeKind::Class;
@@ -322,6 +323,16 @@ impl Walk<'_> {
         }
     }
 
+    /// Adds `node` and a `Contains` edge to it from `parent`.
+    fn add_node(&mut self, parent: &NodeId, node: Node) {
+        self.graph.edges.push(Edge {
+            from: parent.clone(),
+            to: node.id.clone(),
+            kind: EdgeKind::Contains,
+        });
+        self.graph.nodes.push(node);
+    }
+
     /// The id of the node with `qualified_name`, with the file's suffix.
     fn id(&self, qualified_name: &str) -> NodeId {
         let mut id = node_id(self.project, qualified_name);
@@ -333,17 +344,31 @@ impl Walk<'_> {
     /// later bases see it.
     fn assign(&mut self, statement: Syntax<'_>) {
         let mut cursor = statement.walk();
-        let assignments: Vec<Syntax<'_>> = statement
+        let names: Vec<String> = statement
             .named_children(&mut cursor)
             .filter(|child| child.kind() == "assignment")
+            .flat_map(|assignment| assigned_names(assignment, self.module))
             .collect();
-        for assignment in assignments {
-            for name in assigned_names(assignment, self.module) {
-                self.bind(name.clone(), join(self.module.name, &name));
-                if !self.variables.iter().any(|(known, _)| *known == name) {
-                    self.variables.push((name, span(statement)));
-                }
+        for name in names {
+            self.bind(name.clone(), join(self.module.name, &name));
+            self.record_variable(name, span(statement));
+        }
+    }
+
+    /// Remembers a module-level name at its first assignment.
+    fn record_variable(&mut self, name: String, extent: Span) {
+        if !self.variables.iter().any(|(known, _)| *known == name) {
+            self.variables.push((name, extent));
+        }
+    }
+
+    /// Records an import statement's references and binds the names it brings in.
+    fn import(&mut self, statement: Syntax<'_>, scope: &Scope) {
+        for import in imports(statement, self.module) {
+            if let Some((local, dotted)) = import.binding {
+                self.bind(local, dotted);
             }
+            self.refer(scope.reference(import.target, ReferenceKind::Imports, statement));
         }
     }
 
@@ -355,17 +380,15 @@ impl Walk<'_> {
                 continue;
             }
             let id = self.id(&join(self.module.name, &name));
-            self.graph.nodes.push(Node {
-                id: id.clone(),
-                kind: NodeKind::Variable,
-                name,
-                span: extent,
-            });
-            self.graph.edges.push(Edge {
-                from: module.id.clone(),
-                to: id,
-                kind: EdgeKind::Contains,
-            });
+            self.add_node(
+                &module.id,
+                Node {
+                    id,
+                    kind: NodeKind::Variable,
+                    name,
+                    span: extent,
+                },
+            );
         }
     }
 
@@ -574,15 +597,19 @@ fn package_parts(module_name: &str, is_package: bool) -> Vec<&str> {
 /// identifiers so whitespace and comments inside it never reach the name. Any other
 /// expression, such as a call, has no dotted name.
 fn dotted_name(node: Syntax<'_>, module: &ModuleContext<'_>) -> Option<String> {
-    match node.kind() {
-        "identifier" => Some(module.text(node)),
-        "attribute" => {
-            let object = dotted_name(node.child_by_field_name("object")?, module)?;
-            let attribute = module.text(node.child_by_field_name("attribute")?);
-            Some(format!("{object}.{attribute}"))
-        }
-        _ => None,
+    // A loop rather than recursion, so a very long chain cannot overflow the stack.
+    let mut parts = Vec::new();
+    let mut current = node;
+    while current.kind() == "attribute" {
+        parts.push(module.text(current.child_by_field_name("attribute")?));
+        current = current.child_by_field_name("object")?;
     }
+    if current.kind() != "identifier" {
+        return None;
+    }
+    parts.push(module.text(current));
+    parts.reverse();
+    Some(parts.join("."))
 }
 
 /// The plain names an assignment binds: `x = …`, `x: T = …`, `x: T`, each name of
@@ -592,21 +619,29 @@ fn assigned_names(assignment: Syntax<'_>, module: &ModuleContext<'_>) -> Vec<Str
     let mut names = Vec::new();
     let mut current = Some(assignment);
     while let Some(node) = current.filter(|node| node.kind() == "assignment") {
-        let mut pending: Vec<Syntax<'_>> = node.child_by_field_name("left").into_iter().collect();
-        while let Some(target) = pending.pop() {
-            match target.kind() {
-                "identifier" => names.push(module.text(target)),
-                "pattern_list" | "tuple_pattern" | "list_pattern" | "list_splat_pattern" => {
-                    let mut cursor = target.walk();
-                    let mut children: Vec<Syntax<'_>> =
-                        target.named_children(&mut cursor).collect();
-                    children.reverse();
-                    pending.extend(children);
-                }
-                _ => {}
-            }
+        if let Some(left) = node.child_by_field_name("left") {
+            names.extend(pattern_names(left, module));
         }
         current = node.child_by_field_name("right");
+    }
+    names
+}
+
+/// The plain names in an assignment target, in source order: an identifier, or the
+/// identifiers inside (nested) tuple, list and starred patterns.
+fn pattern_names(target: Syntax<'_>, module: &ModuleContext<'_>) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut pending = vec![target];
+    while let Some(node) = pending.pop() {
+        if node.kind() == "identifier" {
+            names.push(module.text(node));
+        } else if UNPACKING_PATTERNS.contains(&node.kind()) {
+            // Pushed in reverse, so they pop in source order.
+            let start = pending.len();
+            let mut cursor = node.walk();
+            pending.extend(node.named_children(&mut cursor));
+            pending[start..].reverse();
+        }
     }
     names
 }

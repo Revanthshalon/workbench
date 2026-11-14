@@ -413,16 +413,16 @@ fn index_file(files: &ProjectFiles<'_>, relative: &Path, context: &Context<'_>) 
         }
     };
 
-    let hash = content_hash(&contents);
-    if files.previous.get(&key) == Some(&hash) {
-        return FileOutcome::Unchanged;
-    }
     let file = SourceFile {
         project: files.project,
         path: &key,
         src_is_package: files.src_is_package,
         disambiguator: files.disambiguated.contains(&key).then_some(key.as_str()),
     };
+    let hash = file_hash(&contents, &file);
+    if files.previous.get(&key) == Some(&hash) {
+        return FileOutcome::Unchanged;
+    }
     match files.parser.parse(&file, &contents) {
         ParseOutcome::Parsed(mut graph) => {
             graph.hash = hash;
@@ -479,11 +479,32 @@ fn removed_files(
     removed
 }
 
-/// FNV-1a: a stable 64-bit hash of a file's contents, used to spot unchanged files.
+/// The hash that decides whether a file is unchanged since the last run: its contents,
+/// plus how it is named. A file that starts or stops losing a module-name collision,
+/// or whose project's `src/` becomes or stops being a package, gets different ids
+/// without its contents changing, so it must be parsed again. Files with neither keep
+/// the plain content hash.
+fn file_hash(contents: &[u8], file: &SourceFile<'_>) -> u64 {
+    let mut hash = content_hash(contents);
+    if let Some(path) = file.disambiguator {
+        hash = fnv1a(fnv1a(hash, b"\0@"), path.as_bytes());
+    }
+    if file.src_is_package {
+        hash = fnv1a(hash, b"\0src-package");
+    }
+    hash
+}
+
+/// FNV-1a: a stable 64-bit hash of a file's contents.
 fn content_hash(contents: &[u8]) -> u64 {
     const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    fnv1a(OFFSET, contents)
+}
+
+/// Continues an FNV-1a hash over more bytes.
+fn fnv1a(hash: u64, bytes: &[u8]) -> u64 {
     const PRIME: u64 = 0x0100_0000_01b3;
-    contents.iter().fold(OFFSET, |hash, byte| {
+    bytes.iter().fold(hash, |hash, byte| {
         (hash ^ u64::from(*byte)).wrapping_mul(PRIME)
     })
 }

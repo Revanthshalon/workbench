@@ -404,6 +404,46 @@ fn collisions_are_computed_from_every_file_even_with_changed() -> CliResult<()> 
 }
 
 #[test]
+fn a_file_whose_collision_status_changed_is_parsed_again() -> CliResult<()> {
+    let scratch = Scratch::new("collision-cache", TWO_PROJECTS)?;
+    scratch.write("api/pkg/x.py", "class Old: ...\n")?;
+    scratch.write("api/pkg/x/__init__.py", "")?;
+    // The last run saw `pkg/x.py` alone, under the plain id, with this content.
+    let storage = FakeStorage {
+        stored: HashMap::from([(
+            "api".to_owned(),
+            HashMap::from([("pkg/x.py".to_owned(), content_hash(b"class Old: ...\n"))]),
+        )]),
+        ..FakeStorage::default()
+    };
+
+    let run = scratch.run(
+        &only("api"),
+        &Run {
+            storage: &storage,
+            python: &PythonParser,
+            typescript: &TextParser,
+            interrupted: false,
+        },
+    )?;
+
+    assert_eq!(
+        report(&run, "api").map(|report| report.counts.unchanged),
+        Some(0)
+    );
+    let written = storage.written.borrow();
+    let mut modules: Vec<&str> = written[0]
+        .1
+        .upserted
+        .iter()
+        .map(|graph| graph.module.as_str())
+        .collect();
+    modules.sort_unstable();
+    assert_eq!(modules, ["api:pkg.x", "api:pkg.x@pkg/x.py"]);
+    Ok(())
+}
+
+#[test]
 fn log_graph_writes_each_parsed_files_graph_to_the_log() -> CliResult<()> {
     let scratch = Scratch::new("log-graph", TWO_PROJECTS)?;
     scratch.write("api/app.py", "class Service:\n    def run(self): ...\n")?;
