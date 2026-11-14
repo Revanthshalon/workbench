@@ -101,7 +101,7 @@ fn parse_python_checked(file: &SourceFile<'_>, source: &str) -> Option<PythonPar
     };
     let mut walk = Walk {
         project: file.project,
-        stub: file.path.ends_with(STUB_EXTENSION),
+        suffix: id_suffix(file),
         module: &module,
         frames: vec![Frame::default()],
         variables: Vec::new(),
@@ -116,10 +116,21 @@ fn parse_python_checked(file: &SourceFile<'_>, source: &str) -> Option<PythonPar
     })
 }
 
-/// The graph with only the file's module node, with the stub suffix for `.pyi` files.
+/// What every id from `file` ends with: `@<path>` when it lost a module-name
+/// collision, otherwise `@pyi` for a stub, otherwise nothing.
+fn id_suffix(file: &SourceFile<'_>) -> String {
+    match file.disambiguator {
+        Some(path) => format!("@{path}"),
+        None if file.path.ends_with(STUB_EXTENSION) => STUB_SUFFIX.to_owned(),
+        None => String::new(),
+    }
+}
+
+/// The graph with only the file's module node, with the file's id suffix.
 fn module_graph(file: &SourceFile<'_>, source: &str) -> FileGraph {
     let mut graph = FileGraph::module_only(file, source.lines().count());
-    if file.path.ends_with(STUB_EXTENSION) {
+    // `module_only` already adds a disambiguator; a stub without one gets `@pyi`.
+    if file.disambiguator.is_none() && file.path.ends_with(STUB_EXTENSION) {
         graph.module.push_str(STUB_SUFFIX);
         if let Some(module) = graph.nodes.first_mut() {
             module.id.clone_from(&graph.module);
@@ -209,7 +220,8 @@ struct Frame {
 
 struct Walk<'a> {
     project: &'a str,
-    stub: bool,
+    /// Appended to every id: `@pyi`, `@<path>`, or nothing.
+    suffix: String,
     module: &'a ModuleContext<'a>,
     /// One frame per scope being walked; the first is the module.
     frames: Vec<Frame>,
@@ -313,9 +325,7 @@ impl Walk<'_> {
     /// The id of the node with `qualified_name`, with the file's suffix.
     fn id(&self, qualified_name: &str) -> NodeId {
         let mut id = node_id(self.project, qualified_name);
-        if self.stub {
-            id.push_str(STUB_SUFFIX);
-        }
+        id.push_str(&self.suffix);
         id
     }
 

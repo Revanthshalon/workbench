@@ -218,9 +218,20 @@ failed, nodes re-linked, and annotations that became stale or orphaned.
   `<project-id>:<qualified name>` (for example `billing-api:billing.invoices.Invoice.total`;
   a leading `src/` folder is not part of the module name unless `src/` has an
   `__init__.py`, and `.pyi` stub ids end in `@pyi`);
+- a `Variable` node for each name assigned at module level (`settings = …`,
+  `a, b = …`, `x: T`), at its first assignment; a class or function of the same
+  name takes precedence;
 - `Contains` edges from each scope to what is defined directly inside it;
-- `Imports` and `Inherits` references to dotted names, with relative imports and
-  imported base classes resolved as far as the file allows.
+- `Imports` and `Inherits` references to dotted names. Relative imports resolve
+  against the file's package, and base classes resolve to the binding in effect
+  where the class is defined: the last import, class or variable of that name before
+  it, in its own scope, enclosing functions, then the module.
+
+When two files of a project give the same module name (`pkg/x.py` and
+`pkg/x/__init__.py`, or `x.py` and `src/x.py`), the file Python would load keeps the
+id and every id from the others ends in `@<path>`. The precedence is: a package's
+`__init__` first, then a file under a plain `src/`, then the earlier file extension,
+then the path. Each collision is logged.
 
 A file with syntax errors is counted as `partial`: everything outside the broken
 parts is kept, and the log names the lines.

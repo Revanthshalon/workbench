@@ -26,6 +26,7 @@ use crate::{
     graph::{FileGraph, SourceFile},
 };
 
+mod collisions;
 mod discover;
 mod lock;
 mod parser;
@@ -34,6 +35,7 @@ mod storage;
 #[cfg(test)]
 mod tests;
 
+use collisions::ModuleFile;
 use discover::{Filter, index_path};
 use lock::IndexLock;
 use parser::{ParseOutcome, Parser, TextParser, python::PythonParser};
@@ -228,6 +230,29 @@ fn index_project(
     let no_hashes = HashMap::new();
     let previous = if args.full { &no_hashes } else { &stored };
 
+    let src_is_package = SRC_PACKAGE_FILES
+        .iter()
+        .any(|file| project_root.join(file).is_file());
+    // Collisions come from every file of the project, so ids do not depend on which
+    // files `--changed` re-parses.
+    let all_files = if args.changed {
+        match discover::source_files(&project_root, &filter) {
+            Ok(files) => files,
+            Err(error) => {
+                fail(format!("could not list files: {error:?}"));
+                return report;
+            }
+        }
+    } else {
+        candidates.clone()
+    };
+    let naming = ModuleNaming {
+        project: &project.id,
+        extensions,
+        src_is_package,
+    };
+    let disambiguated = collision_losers(&naming, &all_files, context.logger);
+
     let files = ProjectFiles {
         project: &project.id,
         root: &project_root,
@@ -238,9 +263,8 @@ fn index_project(
         previous,
         any_size: args.force,
         log_graph: args.log_graph,
-        src_is_package: SRC_PACKAGE_FILES
-            .iter()
-            .any(|file| project_root.join(file).is_file()),
+        src_is_package,
+        disambiguated: &disambiguated,
     };
     let progress = progress_bar(context.progress, &project.id, candidates.len());
     let mut changes = ProjectChanges::default();
@@ -309,6 +333,54 @@ struct ProjectFiles<'a> {
     log_graph: bool,
     /// Whether the project's `src/` is a package, so `src` is part of module names.
     src_is_package: bool,
+    /// Paths of files that lose a module-name collision; their ids get `@<path>`.
+    disambiguated: &'a HashSet<String>,
+}
+
+/// How a project's files are named as modules.
+struct ModuleNaming<'a> {
+    project: &'a str,
+    extensions: &'a [&'a str],
+    src_is_package: bool,
+}
+
+/// The paths of the files that lose a module-name collision, logging each collision.
+fn collision_losers(
+    naming: &ModuleNaming<'_>,
+    all_files: &[PathBuf],
+    logger: &Logger,
+) -> HashSet<String> {
+    let modules: Vec<ModuleFile> = all_files
+        .iter()
+        .map(|relative| {
+            let path = index_path(relative);
+            let module = SourceFile {
+                project: naming.project,
+                path: &path,
+                src_is_package: naming.src_is_package,
+                disambiguator: None,
+            }
+            .module_name();
+            ModuleFile {
+                stub: path.ends_with(".pyi"),
+                path,
+                module,
+            }
+        })
+        .collect();
+    let mut losers = HashSet::new();
+    for collision in collisions::losers(&modules, naming.extensions, naming.src_is_package) {
+        logger.info(&format!(
+            "project `{}`: module `{}` is defined by {} and {}; \
+             ids from the others get the suffix @<path>",
+            naming.project,
+            collision.module,
+            collision.winner,
+            collision.losers.join(", ")
+        ));
+        losers.extend(collision.losers);
+    }
+    losers
 }
 
 /// Reads and parses one file of a project.
@@ -349,6 +421,7 @@ fn index_file(files: &ProjectFiles<'_>, relative: &Path, context: &Context<'_>) 
         project: files.project,
         path: &key,
         src_is_package: files.src_is_package,
+        disambiguator: files.disambiguated.contains(&key).then_some(key.as_str()),
     };
     match files.parser.parse(&file, &contents) {
         ParseOutcome::Parsed(mut graph) => {

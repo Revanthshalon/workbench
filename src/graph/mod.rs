@@ -78,6 +78,9 @@ pub struct SourceFile<'a> {
     /// it has an `__init__.py`). Then `src` is part of module names; otherwise it is
     /// only a folder holding the packages (the "src layout").
     pub src_is_package: bool,
+    /// The file's own path when another file of the project has the same module name
+    /// and wins it. Every id from this file then ends in `@<path>`.
+    pub disambiguator: Option<&'a str>,
 }
 
 impl SourceFile<'_> {
@@ -106,7 +109,10 @@ impl FileGraph {
     /// parser yet.
     pub fn module_only(file: &SourceFile<'_>, line_count: usize) -> Self {
         let name = file.module_name();
-        let module = node_id(file.project, &name);
+        let mut module = node_id(file.project, &name);
+        if let Some(path) = file.disambiguator {
+            module.push_str(&format!("@{path}"));
+        }
         Self {
             path: file.path.to_owned(),
             hash: 0,

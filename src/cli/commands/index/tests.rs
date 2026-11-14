@@ -361,6 +361,49 @@ fn a_src_package_keeps_src_in_module_names() -> CliResult<()> {
 }
 
 #[test]
+fn collisions_are_computed_from_every_file_even_with_changed() -> CliResult<()> {
+    let scratch = Scratch::new("collisions", TWO_PROJECTS)?;
+    let api = scratch.0.join("api");
+    scratch.write("api/pkg/x/__init__.py", "")?;
+    scratch.write("api/pkg/x.py", "class Old: ...\n")?;
+    git(&api, &["init", "-q"])?;
+    git(&api, &["add", "."])?;
+    git(&api, &["commit", "-q", "-m", "initial"])?;
+    scratch.write("api/pkg/x.py", "class New: ...\n")?;
+    let storage = FakeStorage::default();
+
+    scratch.run(
+        &IndexArgs {
+            changed: true,
+            ..only("api")
+        },
+        &Run {
+            storage: &storage,
+            python: &PythonParser,
+            typescript: &TextParser,
+            interrupted: false,
+        },
+    )?;
+
+    let written = storage.written.borrow();
+    let graphs = &written[0].1.upserted;
+    assert_eq!(graphs.len(), 1);
+    assert_eq!(graphs[0].module, "api:pkg.x@pkg/x.py");
+    assert!(
+        graphs[0]
+            .nodes
+            .iter()
+            .any(|node| node.id == "api:pkg.x.New@pkg/x.py")
+    );
+    assert!(
+        scratch
+            .log()
+            .contains("module `pkg.x` is defined by pkg/x/__init__.py and pkg/x.py")
+    );
+    Ok(())
+}
+
+#[test]
 fn log_graph_writes_each_parsed_files_graph_to_the_log() -> CliResult<()> {
     let scratch = Scratch::new("log-graph", TWO_PROJECTS)?;
     scratch.write("api/app.py", "class Service:\n    def run(self): ...\n")?;

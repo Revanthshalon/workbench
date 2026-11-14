@@ -5,6 +5,7 @@ fn source<'a>(project: &'a str, path: &'a str) -> SourceFile<'a> {
         project,
         path,
         src_is_package: false,
+        disambiguator: None,
     }
 }
 
@@ -134,4 +135,17 @@ fn describe_prints_variables() {
             .describe()
             .contains("\n  Variable api:m.x (lines 1-1)\n")
     );
+}
+
+#[test]
+fn module_only_graphs_carry_the_disambiguator() {
+    let file = SourceFile {
+        project: "web",
+        path: "a.js",
+        src_is_package: false,
+        disambiguator: Some("a.js"),
+    };
+    let graph = FileGraph::module_only(&file, 1);
+    assert_eq!(graph.module, "web:a@a.js");
+    assert_eq!(graph.nodes[0].id, "web:a@a.js");
 }

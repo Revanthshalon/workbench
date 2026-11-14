@@ -18,6 +18,7 @@ fn parse_python(project: &str, path: &str, source: &str) -> PythonParse {
             project,
             path,
             src_is_package: false,
+            disambiguator: None,
         },
         source,
     )
@@ -28,6 +29,7 @@ fn plain<'a>(project: &'a str, path: &'a str) -> SourceFile<'a> {
         project,
         path,
         src_is_package: false,
+        disambiguator: None,
     }
 }
 
@@ -299,6 +301,7 @@ fn a_src_package_names_nodes_like_its_imports() {
         project: "demo",
         path: "src/models/user_models.py",
         src_is_package: true,
+        disambiguator: None,
     };
     let source = "from src.models.main_model import MainModel\nfrom .main_model import Base\n\nclass User(MainModel): ...\nclass Admin(User): ...\n";
     let graph = parse_file(&file, source).graph;
@@ -432,4 +435,19 @@ fn variables_bind_names_for_bases() {
     )
     .graph;
     assert_eq!(inherits_targets(&graph), ["db.Base"]);
+}
+
+#[test]
+fn a_disambiguated_file_suffixes_every_id_with_its_path() {
+    let file = SourceFile {
+        project: "api",
+        path: "pkg/x.pyi",
+        src_is_package: false,
+        disambiguator: Some("pkg/x.pyi"),
+    };
+    let graph = parse_file(&file, "class Foo: ...\nv = 1\n").graph;
+    assert_eq!(graph.module, "api:pkg.x@pkg/x.pyi");
+    assert_eq!(graph.nodes[0].id, "api:pkg.x@pkg/x.pyi");
+    assert_eq!(graph.nodes[1].id, "api:pkg.x.Foo@pkg/x.pyi");
+    assert_eq!(graph.nodes[2].id, "api:pkg.x.v@pkg/x.pyi");
 }

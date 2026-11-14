@@ -408,6 +408,8 @@ Result on the real run:
 
 ## Next steps
 
+> **Done:** items 1–6 were fixed by `docs/superpowers/plans/2026-11-14-parser-fixes.md` (spec `docs/superpowers/specs/2026-11-14-parser-fixes-design.md`).
+
 Settle these before or alongside the link step and the Memgraph writer. They are ordered by how much they affect resolving references.
 
 1. **Module ids can collide within a project.** For example, `pkg/x.py` and `pkg/x/__init__.py` both become `pkg.x`; `x.py` and `src/x.py` (in a plain src layout) both become `x`. In TypeScript, `a.ts` and `a.js`, or `index.ts` and `index.tsx`, collide too. This is harmless while storage is a placeholder, but it must be settled before the Memgraph writer, since ids are the nodes' keys.
