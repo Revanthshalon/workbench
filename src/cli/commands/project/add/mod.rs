@@ -8,7 +8,10 @@ use console::{Style, colors_enabled};
 use yaml_serde::{Mapping, Value};
 
 use crate::cli::{
-    commands::project::kinds::{DependencyManager, Language, Stack, TypescriptFramework},
+    commands::{
+        index::{self, IndexArgs},
+        project::kinds::{DependencyManager, Language, Stack, TypescriptFramework},
+    },
     constants::{
         PROJECT_ANNOTATIONS_FILE, PROJECT_ID_PLACEHOLDER, PROJECT_MEMORY_TEMPLATE,
         WORKBENCH_INIT_MEMORY_FILE,
@@ -48,7 +51,7 @@ pub struct AddArgs {
     /// The project's Docker Compose file, relative to the project. Default: detected.
     #[arg(long, value_name = "PATH")]
     pub compose: Option<PathBuf>,
-    /// Index the new project right after adding it.
+    /// Index the new project right after adding it, like `workbench index --id <ID>`.
     #[arg(long)]
     pub index: bool,
 }
@@ -63,16 +66,36 @@ pub(super) struct Project {
     activate: Option<String>,
 }
 
+/// Adds the project at `args.path` to the workspace and prints its fields;
+/// with `--index`, indexes it afterwards.
 pub fn run(args: AddArgs) -> CliResult<()> {
     let (workspace, project) = add_project(&args, &env::current_dir()?)?;
     for line in summary(&workspace, &project, colors_enabled()) {
         println!("{line}");
     }
     if args.index {
-        eprintln!(
-            "\nwarning: --index was ignored because `workbench index` is not available yet; \
-             the project was added but not indexed."
-        );
+        // Same as `workbench index --id <ID>`. A failed index does not undo the add.
+        println!();
+        let indexed = index::run(&IndexArgs {
+            id: Some(project.id.clone()),
+            full: false,
+            changed: false,
+            force: false,
+        });
+        if indexed.is_err() {
+            eprintln!(
+                "{}",
+                table::paint(
+                    &Style::new().yellow(),
+                    &format!(
+                        "Project `{}` was added, but indexing it failed.",
+                        project.id
+                    ),
+                    colors_enabled(),
+                )
+            );
+        }
+        return indexed;
     }
     Ok(())
 }

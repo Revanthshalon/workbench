@@ -39,6 +39,10 @@ pub enum CliErrors {
     },
     UnsafeMemoryPath(String),
     ConfirmationFailed(String),
+    NoProjects,
+    IndexLocked(PathBuf),
+    /// Indexing ran, but some files or projects failed, or it was interrupted.
+    IndexIncomplete(Vec<String>),
 }
 
 impl Display for CliErrors {
@@ -95,6 +99,19 @@ impl Display for CliErrors {
                 f,
                 "Refusing to delete memory for the id `{id}`: it is not a plain folder name."
             ),
+            CliErrors::NoProjects => write!(
+                f,
+                "The workspace has no projects. Add one with `workbench project add <PATH>`."
+            ),
+            CliErrors::IndexLocked(path) => write!(
+                f,
+                "Another `workbench index` is running in this workspace. \
+                 If none is, delete {} and try again.",
+                path.display()
+            ),
+            CliErrors::IndexIncomplete(problems) => {
+                write!(f, "Indexing did not complete: {}.", problems.join(", "))
+            }
             CliErrors::ConfirmationFailed(reason) => write!(
                 f,
                 "Could not ask for confirmation ({reason}). Pass --yes to delete without asking."

@@ -15,8 +15,10 @@ pub enum Kind {
     DependencyManager,
     /// A field name in a two-column table.
     Label,
-    /// Something about to be deleted.
+    /// Something about to be deleted, or a failure.
     Danger,
+    /// Something that went well.
+    Success,
     Plain,
 }
 
@@ -32,6 +34,7 @@ pub fn cell_style(kind: Kind, text: &str) -> Style {
         Kind::DependencyManager => Style::new().magenta(),
         Kind::Label => Style::new().dim(),
         Kind::Danger => Style::new().red(),
+        Kind::Success => Style::new().green(),
         Kind::Language | Kind::Plain => Style::new(),
     }
 }

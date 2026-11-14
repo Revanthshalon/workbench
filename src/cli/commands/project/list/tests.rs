@@ -16,6 +16,7 @@ fn project(
         language: language.map(str::to_owned),
         framework: framework.map(str::to_owned),
         dependency_manager: dependency_manager.map(str::to_owned),
+        venv: None,
     }
 }
 

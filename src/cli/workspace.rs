@@ -9,8 +9,8 @@ use yaml_serde::{Mapping, Value};
 
 use crate::cli::{
     constants::{
-        DEFAULT_SEQUENCE_INDENT, PROJECTS_KEY, WORKBENCH_CONFIG_FILE, WORKBENCH_DIRECTORY,
-        WORKBENCH_MEMORY_DIRECTORY,
+        DEFAULT_SEQUENCE_INDENT, DEFAULT_STORAGE_HOST, DEFAULT_STORAGE_PORT, PROJECTS_KEY,
+        STORAGE_KEY, WORKBENCH_CONFIG_FILE, WORKBENCH_DIRECTORY, WORKBENCH_MEMORY_DIRECTORY,
     },
     errors::{CliErrors, CliResult},
 };
@@ -32,6 +32,16 @@ pub struct ExistingProject {
     pub language: Option<String>,
     pub framework: Option<String>,
     pub dependency_manager: Option<String>,
+    /// `environment.venv`, relative to the project.
+    pub venv: Option<String>,
+}
+
+/// The `storage` block of the workspace config: where Memgraph is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageSettings {
+    pub host: String,
+    pub port: u16,
+    pub namespace: Option<String>,
 }
 
 impl Workspace {
@@ -49,6 +59,40 @@ impl Workspace {
             }
         }
         Err(CliErrors::WorkspaceNotFound(start))
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// The `.workbench/` directory.
+    pub fn workbench_path(&self) -> PathBuf {
+        self.root.join(WORKBENCH_DIRECTORY)
+    }
+
+    /// The `storage` block, with defaults for the fields it leaves out.
+    pub fn storage(&self) -> CliResult<StorageSettings> {
+        let document: Value =
+            yaml_serde::from_str(&self.config).map_err(|error| self.invalid(&error.to_string()))?;
+        let storage = document.get(STORAGE_KEY);
+        let field = |key: &str| storage.and_then(|storage| storage.get(key));
+        let port = match field("port") {
+            None | Some(Value::Null) => DEFAULT_STORAGE_PORT,
+            Some(value) => value
+                .as_u64()
+                .and_then(|port| u16::try_from(port).ok())
+                .ok_or_else(|| self.invalid("`storage.port` must be a port number"))?,
+        };
+        Ok(StorageSettings {
+            host: field("host")
+                .and_then(Value::as_str)
+                .unwrap_or(DEFAULT_STORAGE_HOST)
+                .to_owned(),
+            port,
+            namespace: field("namespace")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        })
     }
 
     pub fn config_path(&self) -> &Path {
@@ -74,6 +118,11 @@ impl Workspace {
                     language: field("language"),
                     framework: field("framework"),
                     dependency_manager: field("dependency_manager"),
+                    venv: project
+                        .get("environment")
+                        .and_then(|environment| environment.get("venv"))
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
                 }
             })
             .collect())

@@ -18,6 +18,7 @@ pub const PROJECT_ANNOTATIONS_FILE: &str = "annotations.yml";
 pub const WORKBENCH_MCP_DIRECTORY: &str = "mcp";
 pub const WORKBENCH_MCP_CONFIG_FILE: &str = "config.yml";
 pub const WORKBENCH_CONTEXTS_DIRECTORY: &str = "contexts";
+pub const WORKBENCH_LOGS_DIRECTORY: &str = "logs";
 pub const WORKBENCH_SKILLS_DIRECTORY: &str = "skills";
 pub const WORKBENCH_DEFAULT_CONTEXTS: [&str; 3] = ["production", "staging", "testing"];
 
@@ -66,4 +67,27 @@ pub const COMPOSE_FILES: [&str; 4] = [
     "compose.yml",
     "docker-compose.yaml",
     "docker-compose.yml",
+];
+
+pub const LOG_FILE_PREFIX: &str = "workbench-";
+pub const LOG_FILE_EXTENSION: &str = "log";
+
+pub const STORAGE_KEY: &str = "storage";
+pub const DEFAULT_STORAGE_HOST: &str = "localhost";
+pub const DEFAULT_STORAGE_PORT: u16 = 7687;
+
+pub const INDEX_LOCK_FILE: &str = "index.lock";
+/// Files larger than this are skipped rather than parsed.
+pub const MAX_INDEXED_FILE_BYTES: u64 = 1024 * 1024;
+pub const PYTHON_EXTENSIONS: [&str; 2] = ["py", "pyi"];
+pub const TYPESCRIPT_EXTENSIONS: [&str; 8] = ["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
+/// Directories never indexed, in addition to every hidden directory (`.git`, `.venv`, ...).
+pub const SKIPPED_DIRECTORIES: [&str; 7] = [
+    "node_modules",
+    "__pycache__",
+    "venv",
+    "dist",
+    "build",
+    "coverage",
+    "target",
 ];

@@ -8,8 +8,8 @@ use crate::cli::{
         CONTEXT_NAME_PLACEHOLDER, GITIGNORE_FILE, SPINNER_TICK_MILLISECONDS, WORKBENCH_CONFIG_FILE,
         WORKBENCH_CONTEXT_TEMPLATE, WORKBENCH_CONTEXTS_DIRECTORY, WORKBENCH_DEFAULT_CONTEXTS,
         WORKBENCH_DIRECTORY, WORKBENCH_INIT_MEMORY_FILE, WORKBENCH_INIT_MEMORY_TEMPLATE,
-        WORKBENCH_MCP_CONFIG_FILE, WORKBENCH_MCP_CONFIG_TEMPLATE, WORKBENCH_MCP_DIRECTORY,
-        WORKBENCH_MEMORY_DIRECTORY, WORKBENCH_SKILLS_DIRECTORY,
+        WORKBENCH_LOGS_DIRECTORY, WORKBENCH_MCP_CONFIG_FILE, WORKBENCH_MCP_CONFIG_TEMPLATE,
+        WORKBENCH_MCP_DIRECTORY, WORKBENCH_MEMORY_DIRECTORY, WORKBENCH_SKILLS_DIRECTORY,
     },
     errors::CliResult,
 };
@@ -56,7 +56,8 @@ fn initialise(args: &InitArgs, reporter: &Reporter<'_>) -> CliResult<()> {
     let mcp_path = base_path.join(WORKBENCH_MCP_DIRECTORY);
     let contexts_path = mcp_path.join(WORKBENCH_CONTEXTS_DIRECTORY);
     let skills_path = base_path.join(WORKBENCH_SKILLS_DIRECTORY);
-    for directory in [&memory_path, &contexts_path, &skills_path] {
+    let logs_path = base_path.join(WORKBENCH_LOGS_DIRECTORY);
+    for directory in [&memory_path, &contexts_path, &skills_path, &logs_path] {
         fs::create_dir_all(directory)?;
     }
 

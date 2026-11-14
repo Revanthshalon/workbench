@@ -68,7 +68,7 @@ workbench project add ../shared/web --id web
 | `--venv <PATH>` | Python only. Default: `.venv` if it exists in the project. |
 | `--activate <COMMAND>` | Command prefix for running tools in the project. Default: `uv run` or `poetry run` for Python, none for TypeScript. |
 | `--compose <PATH>` | Compose file, relative to the project. Default: the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` at the project root. |
-| `--index` | Accepted, but currently only prints a warning: `workbench index` does not exist yet. |
+| `--index` | Index the new project right after adding it, like `workbench index --id <ID>`. A failed index does not undo the add. |
 
 **Detection** looks at files inside the project directory:
 
@@ -171,6 +171,64 @@ command fails unless `--yes` is given. The config is never changed. Files direct
 in `.workbench/memory/`, such as the workspace `INIT-MEMORY.md`, and symbolic links
 are never deleted. With nothing to delete, it says so without asking.
 
+### `workbench index`
+
+Reads the projects' files and writes the index to storage: Memgraph, configured in
+the `storage` block of `.workbench/config.yml`. It never changes a project's files.
+
+> **Placeholders:** Memgraph is not set up yet, so nothing is stored and every run
+> treats all files as new (`unchanged`, `removed`, `re-linked`, `stale` and
+> `orphaned` stay at 0). "Parsing" currently only checks that a file is valid
+> UTF-8 text.
+
+```sh
+workbench index                # every project
+workbench index --id api       # one project
+workbench index --full         # re-parse every file
+workbench index --changed      # only files git reports as changed
+workbench index --force        # also parse files over 1 MiB
+```
+
+| Option | Meaning |
+|---|---|
+| `--id <ID>` | Index only this project. Default: every project. |
+| `--full` | Re-parse every file, ignoring stored content hashes. Deleted files are still removed. |
+| `--changed` | Only files git reports as modified, staged, deleted or untracked since the last commit. Cannot be combined with `--full`. |
+| `--force` | Parse files of any size. Without it, files over 1 MiB are skipped. Symbolic links are always skipped. |
+
+Progress goes to stderr and the summary to stdout. The summary is a table with one
+row per project: status, files parsed, unchanged, removed, skipped, partial and
+failed, nodes re-linked, and annotations that became stale or orphaned.
+
+**Which files are indexed:**
+
+- Python: `.py`, `.pyi`.
+- TypeScript: `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`.
+- These directories are never entered: hidden directories (such as `.git` and
+  `.venv`), `node_modules`, `__pycache__`, `venv`, `dist`, `build`, `coverage`,
+  `target`, and the project's configured venv.
+- Symbolic links are skipped, and so are files over 1 MiB unless `--force` is given.
+
+**Exit code** is 1 if any file could not be read or parsed, a project could not be
+written or indexed, the lock could not be taken, or the run was interrupted
+(Ctrl-C). Skipped and partial files are not failures.
+
+Only one run at a time may index a workspace. A run holds `.workbench/index.lock`
+and deletes it when it finishes, including when interrupted. If a run was killed
+and left the lock behind, delete the file.
+
+`workbench project add --index` runs the same indexing for the new project. A
+failed index does not undo the add.
+
+## Errors and logs
+
+The terminal shows a short message for every error. The details, such as the
+file, the operating-system error and the full error, are appended to
+`.workbench/logs/workbench-YYYY-MM-DD.log`, one file per day in UTC. The error
+message ends with the log's path. Outside a workspace there is no log.
+
+Exit codes: 0 on success, 1 when a command fails, 2 for invalid usage.
+
 ## Workspace layout
 
 ```
@@ -178,6 +236,9 @@ are never deleted. With nothing to delete, it says so without asking.
   .gitignore                       # contains .workbench/
   .workbench/
     config.yml                     # version, storage and projects
+    index.lock                     # only while `workbench index` runs
+    logs/
+      workbench-YYYY-MM-DD.log     # error details, one file per day
     memory/
       INIT-MEMORY.md               # workspace notes, written by hand
       <id>/                        # one folder per project
@@ -231,9 +292,11 @@ src/
     errors.rs                # CLI error messages
     table.rs                 # coloured ASCII tables
     prompt.rs                # output and yes/no confirmation
+    log.rs                   # daily error logs
     workspace.rs             # finds the workspace and edits its config
     commands/
       init/                  # `workbench init`
+      index/                 # `workbench index`: discovery, parser, storage, lock
       project/               # `workbench project`
         kinds.rs             # typed languages, dependency managers, frameworks
         add/                 # `workbench project add`
