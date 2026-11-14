@@ -46,13 +46,14 @@ pub enum CliErrors {
     /// Memgraph could not be reached; `details` go to the log only.
     MemgraphConnection {
         address: String,
+        #[expect(
+            dead_code,
+            reason = "read through `Debug`, which `main` writes to the log"
+        )]
         details: String,
     },
     MissingStorageNamespace(PathBuf),
     MissingPasswordVariable(String),
-    /// Deleting the data of projects removed from the config failed; the details go
-    /// to the log only.
-    ProjectCleanupFailed(String),
 }
 
 impl Display for CliErrors {
@@ -134,10 +135,6 @@ impl Display for CliErrors {
             CliErrors::MissingPasswordVariable(name) => write!(
                 f,
                 "`storage.password_env` names the environment variable `{name}`, which is not set."
-            ),
-            CliErrors::ProjectCleanupFailed(_) => write!(
-                f,
-                "Could not remove the indexed data of projects no longer in the config."
             ),
             CliErrors::ConfirmationFailed(reason) => write!(
                 f,

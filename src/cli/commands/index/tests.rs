@@ -133,6 +133,11 @@ struct FakeStorage {
     stored: HashMap<String, HashMap<String, u64>>,
     fail_writes: bool,
     written: RefCell<Vec<(String, ProjectChanges)>>,
+    /// Ids `remove_projects_except` reports as removed.
+    removable: Vec<String>,
+    fail_cleanup: bool,
+    /// Every `keep` list `remove_projects_except` was called with.
+    kept: RefCell<Vec<Vec<String>>>,
 }
 
 impl Storage for FakeStorage {
@@ -162,8 +167,14 @@ impl Storage for FakeStorage {
         })
     }
 
-    fn remove_projects_except(&self, _keep: &[&str]) -> Result<Vec<String>, StorageError> {
-        Ok(Vec::new())
+    fn remove_projects_except(&self, keep: &[&str]) -> Result<Vec<String>, StorageError> {
+        self.kept
+            .borrow_mut()
+            .push(keep.iter().map(|id| (*id).to_owned()).collect());
+        if self.fail_cleanup {
+            return Err(StorageError("cleanup refused".to_owned()));
+        }
+        Ok(self.removable.clone())
     }
 
     fn describe(&self) -> String {
@@ -486,6 +497,67 @@ fn adding_a_submodule_reparses_the_init_that_defines_its_name() -> CliResult<()>
             .iter()
             .any(|node| node.id == "api:pkg.settings@pkg/__init__.py")
     }));
+    Ok(())
+}
+
+#[test]
+fn a_full_run_removes_projects_no_longer_in_the_config() -> CliResult<()> {
+    let scratch = Scratch::new("cleanup", TWO_PROJECTS)?;
+    scratch.write("api/app.py", "")?;
+    scratch.write("web/main.ts", "")?;
+    let storage = FakeStorage {
+        removable: vec!["old-api".to_owned()],
+        ..FakeStorage::default()
+    };
+
+    let run = scratch.index_with(&all(), &storage, &TextParser, false)?;
+
+    assert_eq!(
+        storage.kept.borrow().as_slice(),
+        [vec!["api".to_owned(), "web".to_owned()]]
+    );
+    assert_eq!(run.removed_projects, ["old-api"]);
+    assert!(run.summary("Storage: fake", false).contains(
+        &"Removed indexed data of 1 project no longer in the config: old-api".to_owned()
+    ));
+    assert!(run.problems().is_empty());
+    Ok(())
+}
+
+#[test]
+fn runs_with_an_id_or_interrupted_runs_remove_nothing() -> CliResult<()> {
+    let scratch = Scratch::new("no-cleanup", TWO_PROJECTS)?;
+    scratch.write("api/app.py", "")?;
+    scratch.write("web/main.ts", "")?;
+    let storage = FakeStorage {
+        removable: vec!["old-api".to_owned()],
+        ..FakeStorage::default()
+    };
+
+    scratch.index_with(&only("api"), &storage, &TextParser, false)?;
+    scratch.index_with(&all(), &storage, &TextParser, true)?;
+
+    assert!(storage.kept.borrow().is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_failed_cleanup_is_a_problem() -> CliResult<()> {
+    let scratch = Scratch::new("cleanup-fails", TWO_PROJECTS)?;
+    scratch.write("api/app.py", "")?;
+    scratch.write("web/main.ts", "")?;
+    let storage = FakeStorage {
+        fail_cleanup: true,
+        ..FakeStorage::default()
+    };
+
+    let run = scratch.index_with(&all(), &storage, &TextParser, false)?;
+
+    assert_eq!(
+        run.problems(),
+        ["the data of projects removed from the config could not be deleted"]
+    );
+    assert!(scratch.log().contains("cleanup refused"));
     Ok(())
 }
 
@@ -816,6 +888,8 @@ fn summary_is_a_table_of_every_count() {
             },
         ],
         interrupted: false,
+        removed_projects: Vec::new(),
+        cleanup_failed: false,
     };
 
     assert_eq!(

@@ -409,6 +409,8 @@ Result on the real run:
 ## Next steps
 
 > **Done:** items 1–6 were fixed by `docs/superpowers/plans/2026-11-14-parser-fixes.md` (spec `docs/superpowers/specs/2026-11-14-parser-fixes-design.md`).
+>
+> **Done:** the Memgraph writer, by `docs/superpowers/plans/2026-11-14-memgraph-store.md` (spec `docs/superpowers/specs/2026-11-14-memgraph-store-design.md`). The link step is next.
 
 Settle these before or alongside the link step and the Memgraph writer. They are ordered by how much they affect resolving references.
 

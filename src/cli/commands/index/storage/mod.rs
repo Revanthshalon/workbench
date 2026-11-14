@@ -1,14 +1,12 @@
 //! Where the index is written: Memgraph, configured in the workspace `storage` block.
 //!
-//! Memgraph is not set up yet, so [`MemgraphPlaceholder`] stores nothing. Every run
-//! therefore treats all files as new. The real store implements the same trait.
+//! The default build stores to Memgraph (`memgraph::MemgraphStore`). A build without
+//! the `memgraph` feature has only [`NoStorage`], which stores nothing, so every run
+//! treats all files as new.
 
 use std::collections::HashMap;
 
-use crate::{
-    cli::workspace::{ExistingProject, StorageSettings},
-    graph::FileGraph,
-};
+use crate::{cli::workspace::ExistingProject, graph::FileGraph};
 
 /// What changed in one project since the last run.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -54,19 +52,13 @@ pub trait Storage {
     fn describe(&self) -> String;
 }
 
-/// Stands in for Memgraph until it is set up: remembers nothing, writes nothing.
+/// Storage for builds without the `memgraph` feature: remembers nothing, writes nothing.
+#[cfg(not(feature = "memgraph"))]
 #[derive(Debug)]
-pub struct MemgraphPlaceholder {
-    settings: StorageSettings,
-}
+pub struct NoStorage;
 
-impl MemgraphPlaceholder {
-    pub fn new(settings: StorageSettings) -> Self {
-        Self { settings }
-    }
-}
-
-impl Storage for MemgraphPlaceholder {
+#[cfg(not(feature = "memgraph"))]
+impl Storage for NoStorage {
     fn stored_hashes(&self, _project: &str) -> Result<HashMap<String, u64>, StorageError> {
         Ok(HashMap::new())
     }
@@ -84,16 +76,7 @@ impl Storage for MemgraphPlaceholder {
     }
 
     fn describe(&self) -> String {
-        let namespace = self
-            .settings
-            .namespace
-            .as_deref()
-            .map(|namespace| format!(", namespace {namespace}"))
-            .unwrap_or_default();
-        format!(
-            "Storage: Memgraph at {}:{}{namespace} (placeholder; nothing was written)",
-            self.settings.host, self.settings.port
-        )
+        "Storage: none (built without Memgraph support; nothing was written)".to_owned()
     }
 }
 

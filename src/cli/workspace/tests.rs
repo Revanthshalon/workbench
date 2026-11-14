@@ -86,8 +86,4 @@ fn storage_errors_say_what_to_fix() {
         CliErrors::MissingPasswordVariable("MG_PASS".to_owned()).to_string(),
         "`storage.password_env` names the environment variable `MG_PASS`, which is not set."
     );
-    assert_eq!(
-        CliErrors::ProjectCleanupFailed("boom".to_owned()).to_string(),
-        "Could not remove the indexed data of projects no longer in the config."
-    );
 }

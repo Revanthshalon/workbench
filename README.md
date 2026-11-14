@@ -7,6 +7,10 @@ records what the workspace contains. Each workspace keeps its state in a
 ## Requirements
 
 - Rust (the toolchain pinned in `rust-toolchain.toml`)
+- cmake and OpenSSL 3, for the Memgraph client built by default
+  (`brew install cmake openssl@3` on macOS)
+- A running [Memgraph](https://memgraph.com) for `workbench index`, by default on
+  `localhost:7687`
 
 ## Build
 
@@ -14,6 +18,9 @@ records what the workspace contains. Each workspace keeps its state in a
 cargo build --release
 ./target/release/workbench --help
 ```
+
+`cargo build --no-default-features` builds without the Memgraph client (no cmake or
+OpenSSL needed); `index` then stores nothing.
 
 ## Commands
 
@@ -176,11 +183,9 @@ are never deleted. With nothing to delete, it says so without asking.
 Reads the projects' files and writes the index to storage: Memgraph, configured in
 the `storage` block of `.workbench/config.yml`. It never changes a project's files.
 
-> **Placeholders:** Memgraph is not set up yet, so nothing is stored and every run
-> treats all files as new (`unchanged`, `removed`, `re-linked`, `stale` and
-> `orphaned` stay at 0). Python files are parsed into a code graph of modules,
-> classes, functions and methods, with their imports and base classes; TypeScript
-> files are only checked to be valid UTF-8 text. Nothing is stored yet.
+> **Not yet:** references are stored unresolved (the link step comes next), so
+> `re-linked`, `stale` and `orphaned` stay at 0. TypeScript files are only checked
+> to be valid UTF-8 text and store just their module node.
 
 ```sh
 workbench index                # every project
@@ -246,6 +251,43 @@ and left the lock behind, delete the file.
 
 `workbench project add --index` runs the same indexing for the new project. A
 failed index does not undo the add.
+
+**What is stored.** Every node carries the workspace's `storage.namespace`, and every
+query is scoped to it, so several workspaces can share one Memgraph.
+
+| Node label | Properties |
+|---|---|
+| `Workspace` | `namespace` |
+| `Project` | `id`, `path`, `language`, `framework` |
+| `File` | `project`, `path`, `hash` (16 hex digits) |
+| `Code` plus `Module`, `Class`, `Function`, `Method` or `Variable` | `project`, `id`, `kind`, `name`, `path`, `start_line`, `end_line` |
+| `Reference` | `project`, `path`, `target`, `line` |
+
+`CONTAINS` links the workspace to its projects, a project to its files, a file to its
+module node, and each scope to what is defined directly inside it. Each import or
+base class is an `IMPORTS` or `INHERITS` relationship (with its `line`) from the
+code node to its own `Reference` node, whose `target` is the dotted name. For example,
+the classes inheriting from a base:
+
+```cypher
+MATCH (c:Class {namespace: $ns})-[:INHERITS]->(r:Reference {target: 'src.models.main_model.MainModel'})
+RETURN c.id, c.path, c.start_line
+```
+
+**Incremental runs.** A file is skipped as `unchanged` when its stored hash still
+matches: the hash covers its contents and how it is named. Files that disappeared are
+`removed` from Memgraph. Each project is written in one transaction: if writing
+fails, nothing of it changes and the project shows `write failed`.
+
+**Removed projects.** A run that covers every project (no `--id`) and is not
+interrupted deletes the stored data of projects no longer in the config, and names
+them in the summary.
+
+**Connecting.** `index` connects before reading any file. If Memgraph cannot be
+reached, it fails at once with `Could not connect to Memgraph at <host>:<port>. Is it
+running?`, and the details go to the log. The `storage` block can also name a
+`username` and `password_env`, the name of the environment variable holding the
+password (never the password itself).
 
 ## Errors and logs
 

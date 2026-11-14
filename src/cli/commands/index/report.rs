@@ -60,6 +60,10 @@ pub struct ProjectReport {
 pub struct IndexRun {
     pub projects: Vec<ProjectReport>,
     pub interrupted: bool,
+    /// Projects no longer in the config whose stored data this run deleted.
+    pub removed_projects: Vec<String>,
+    /// Deleting the data of projects no longer in the config failed.
+    pub cleanup_failed: bool,
 }
 
 const HEADERS: [&str; 11] = [
@@ -113,6 +117,14 @@ impl IndexRun {
             },
             colors,
         );
+        if !self.removed_projects.is_empty() {
+            let count = self.removed_projects.len();
+            lines.push(format!(
+                "Removed indexed data of {count} {} no longer in the config: {}",
+                plural(count, "project", "projects"),
+                self.removed_projects.join(", ")
+            ));
+        }
         lines.push(table::paint(&Style::new().dim(), storage, colors));
         lines
     }
@@ -155,6 +167,11 @@ impl IndexRun {
         }
         if self.interrupted {
             problems.push("the run was interrupted".to_owned());
+        }
+        if self.cleanup_failed {
+            problems.push(
+                "the data of projects removed from the config could not be deleted".to_owned(),
+            );
         }
         problems
     }

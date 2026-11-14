@@ -40,7 +40,9 @@ use discover::{Filter, index_path};
 use lock::IndexLock;
 use parser::{ParseOutcome, Parser, TextParser, python::PythonParser};
 use report::{Counts, IndexRun, ProjectReport, Status};
-use storage::{MemgraphPlaceholder, ProjectChanges, Storage};
+#[cfg(feature = "memgraph")]
+use storage::memgraph::MemgraphStore;
+use storage::{ProjectChanges, Storage};
 
 #[derive(Debug, Args)]
 pub struct IndexArgs {
@@ -71,11 +73,12 @@ pub fn run(args: &IndexArgs) -> CliResult<()> {
     let _handler = ctrlc::set_handler(|| INTERRUPTED.store(true, Ordering::SeqCst));
 
     let workspace = Workspace::find(&env::current_dir()?)?;
-    let storage = MemgraphPlaceholder::new(workspace.storage()?);
+    // Connecting comes first, so an unreachable Memgraph fails before any parsing.
+    let storage = open_storage(&workspace)?;
     let logger = Logger::new(workspace.root(), "index");
     let context = Context {
         workspace: &workspace,
-        storage: &storage,
+        storage: storage.as_ref(),
         python_parser: &PythonParser,
         typescript_parser: &TextParser,
         logger: &logger,
@@ -106,6 +109,31 @@ pub fn run(args: &IndexArgs) -> CliResult<()> {
     } else {
         Err(CliErrors::IndexIncomplete(problems))
     }
+}
+
+/// Connects to the Memgraph the workspace's `storage` block names.
+#[cfg(feature = "memgraph")]
+fn open_storage(workspace: &Workspace) -> CliResult<Box<dyn Storage>> {
+    let settings = workspace.storage()?;
+    let namespace = settings.namespace.clone().ok_or_else(|| {
+        CliErrors::MissingStorageNamespace(PathBuf::from(
+            workspace.relative_path(workspace.config_path()),
+        ))
+    })?;
+    let password = settings.password(|name| env::var(name).ok())?;
+    let store = MemgraphStore::connect(&settings, &namespace, password).map_err(|error| {
+        CliErrors::MemgraphConnection {
+            address: format!("{}:{}", settings.host, settings.port),
+            details: error.0,
+        }
+    })?;
+    Ok(Box::new(store))
+}
+
+/// Without the `memgraph` feature there is nothing to connect to.
+#[cfg(not(feature = "memgraph"))]
+fn open_storage(_workspace: &Workspace) -> CliResult<Box<dyn Storage>> {
+    Ok(Box::new(storage::NoStorage))
 }
 
 /// Everything a run works with, so tests can swap in their own storage and parsers.
@@ -144,6 +172,8 @@ pub(super) fn execute(args: &IndexArgs, context: &Context<'_>) -> CliResult<Inde
     let mut run = IndexRun {
         projects: Vec::new(),
         interrupted: false,
+        removed_projects: Vec::new(),
+        cleanup_failed: false,
     };
     for project in selected {
         if run.interrupted {
@@ -160,6 +190,20 @@ pub(super) fn execute(args: &IndexArgs, context: &Context<'_>) -> CliResult<Inde
             eprintln!("{}: {}", report.id, progress_line(&report));
         }
         run.projects.push(report);
+    }
+    // Only a run that covered every project knows which stored projects are gone.
+    if args.id.is_none() && !run.interrupted {
+        let keep: Vec<&str> = projects.iter().map(|project| project.id.as_str()).collect();
+        match context.storage.remove_projects_except(&keep) {
+            Ok(removed) => run.removed_projects = removed,
+            Err(error) => {
+                context.logger.error(&format!(
+                    "could not remove the data of projects no longer in the config: {}",
+                    error.0
+                ));
+                run.cleanup_failed = true;
+            }
+        }
     }
     Ok(run)
 }
