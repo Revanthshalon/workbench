@@ -114,3 +114,24 @@ fn describe_says_none_for_empty_sections() {
         "nodes:\n  Module   web:main (lines 1-1)\nedges: none\nreferences: none"
     );
 }
+
+#[test]
+fn describe_prints_variables() {
+    use super::Node;
+
+    let mut graph = FileGraph::module_only(&source("api", "m.py"), 1);
+    graph.nodes.push(Node {
+        id: "api:m.x".to_owned(),
+        kind: NodeKind::Variable,
+        name: "x".to_owned(),
+        span: Span {
+            start_line: 1,
+            end_line: 1,
+        },
+    });
+    assert!(
+        graph
+            .describe()
+            .contains("\n  Variable api:m.x (lines 1-1)\n")
+    );
+}

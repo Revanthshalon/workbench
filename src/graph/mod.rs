@@ -14,6 +14,8 @@ pub enum NodeKind {
     Class,
     Function,
     Method,
+    /// A name assigned at module level.
+    Variable,
 }
 
 /// Lines a node spans, 1-based and inclusive.

@@ -265,9 +265,12 @@ fn clean_files_parse_fully() {
 fn very_long_expressions_do_not_overflow_the_stack() {
     let source = format!("x = 1{}\n\ndef after(): ...\n", " + 1".repeat(50_000));
     let graph = parse_python("api", "generated.py", &source).graph;
-    assert_eq!(
-        graph.nodes.last().map(|node| node.id.as_str()),
-        Some("api:generated.after")
+    assert!(
+        graph
+            .nodes
+            .iter()
+            .any(|node| node.id == "api:generated.after"),
+        "the walk stopped before `after`"
     );
 }
 
@@ -371,4 +374,62 @@ fn local_imports_bind_inside_their_function() {
         inherits_targets(&parse_python("api", "m.py", source).graph),
         ["models.Base", "Base"]
     );
+}
+
+#[test]
+fn module_level_assignments_become_variables() {
+    let source = "settings = get_settings()\nMETADATA: MetaData = MetaData()\nT: TypeVar\na, (b, *rest) = 1, (2, 3)\nx = y = 0\nobj.attr = 1\nd[k] = 2\ncount += 1\ndef f():\n    local = 1\nclass C:\n    attr = 1\n";
+    let graph = parse_python("api", "config.py", source).graph;
+    let variables: Vec<(&str, usize)> = graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == NodeKind::Variable)
+        .map(|node| (node.id.as_str(), node.span.start_line))
+        .collect();
+    assert_eq!(
+        variables,
+        [
+            ("api:config.settings", 1),
+            ("api:config.METADATA", 2),
+            ("api:config.T", 3),
+            ("api:config.a", 4),
+            ("api:config.b", 4),
+            ("api:config.rest", 4),
+            ("api:config.x", 5),
+            ("api:config.y", 5),
+        ]
+    );
+    assert!(contains(&graph).contains(&("api:config", "api:config.settings")));
+}
+
+#[test]
+fn a_variable_assigned_in_both_branches_is_one_node() {
+    let graph = parse_python("api", "m.py", "if X:\n    v = 1\nelse:\n    v = 2\n").graph;
+    let variables: Vec<_> = graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == NodeKind::Variable)
+        .collect();
+    assert_eq!(variables.len(), 1);
+    assert_eq!(variables[0].span.start_line, 2);
+}
+
+#[test]
+fn definitions_win_over_variables_of_the_same_name() {
+    let graph = parse_python("api", "m.py", "def f(): ...\nf = wrap(f)\n").graph;
+    assert_eq!(
+        ids(&graph),
+        [("api:m", NodeKind::Module), ("api:m.f", NodeKind::Function)]
+    );
+}
+
+#[test]
+fn variables_bind_names_for_bases() {
+    let graph = parse_python(
+        "api",
+        "db.py",
+        "Base = declarative_base()\nclass User(Base): ...\n",
+    )
+    .graph;
+    assert_eq!(inherits_targets(&graph), ["db.Base"]);
 }

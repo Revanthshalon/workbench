@@ -104,10 +104,12 @@ fn parse_python_checked(file: &SourceFile<'_>, source: &str) -> Option<PythonPar
         stub: file.path.ends_with(STUB_EXTENSION),
         module: &module,
         frames: vec![Frame::default()],
+        variables: Vec::new(),
         graph: &mut graph,
     };
     let mut module_scope = Scope::new(module_name.clone(), walk.graph.module.clone(), false);
     walk.visit(tree.root_node(), &mut module_scope);
+    walk.add_variables(&module_scope);
     Some(PythonParse {
         graph,
         error_lines: error_lines(tree.root_node()),
@@ -211,6 +213,8 @@ struct Walk<'a> {
     module: &'a ModuleContext<'a>,
     /// One frame per scope being walked; the first is the module.
     frames: Vec<Frame>,
+    /// Names assigned at module level, with their first assignment, in source order.
+    variables: Vec<(String, Span)>,
     graph: &'a mut FileGraph,
 }
 
@@ -240,6 +244,8 @@ impl Walk<'_> {
                     self.refer(scope.reference(import.target, ReferenceKind::Imports, child));
                 }
             }
+            // Only module-level assignments become variables.
+            "expression_statement" if self.frames.len() == 1 => self.assign(child),
             kind if STATEMENT_CONTAINERS.contains(&kind) => self.visit(child, scope),
             _ => {}
         }
@@ -267,10 +273,7 @@ impl Walk<'_> {
             String::new()
         };
         let qualified_name = format!("{}.{name}{suffix}", scope.qualified_name);
-        let mut id = node_id(self.project, &qualified_name);
-        if self.stub {
-            id.push_str(STUB_SUFFIX);
-        }
+        let id = self.id(&qualified_name);
 
         self.graph.nodes.push(Node {
             id: id.clone(),
@@ -304,6 +307,55 @@ impl Walk<'_> {
             });
             self.visit(body, &mut inner);
             self.frames.pop();
+        }
+    }
+
+    /// The id of the node with `qualified_name`, with the file's suffix.
+    fn id(&self, qualified_name: &str) -> NodeId {
+        let mut id = node_id(self.project, qualified_name);
+        if self.stub {
+            id.push_str(STUB_SUFFIX);
+        }
+        id
+    }
+
+    /// Records the names a module-level statement assigns, binding each one now so
+    /// later bases see it.
+    fn assign(&mut self, statement: Syntax<'_>) {
+        let mut cursor = statement.walk();
+        let assignments: Vec<Syntax<'_>> = statement
+            .named_children(&mut cursor)
+            .filter(|child| child.kind() == "assignment")
+            .collect();
+        for assignment in assignments {
+            for name in assigned_names(assignment, self.module) {
+                self.bind(name.clone(), join(self.module.name, &name));
+                if !self.variables.iter().any(|(known, _)| *known == name) {
+                    self.variables.push((name, span(statement)));
+                }
+            }
+        }
+    }
+
+    /// Adds a `Variable` node for each module-level name no class or function took.
+    fn add_variables(&mut self, module: &Scope) {
+        let variables = std::mem::take(&mut self.variables);
+        for (name, extent) in variables {
+            if module.name_counts.contains_key(&name) {
+                continue;
+            }
+            let id = self.id(&join(self.module.name, &name));
+            self.graph.nodes.push(Node {
+                id: id.clone(),
+                kind: NodeKind::Variable,
+                name,
+                span: extent,
+            });
+            self.graph.edges.push(Edge {
+                from: module.id.clone(),
+                to: id,
+                kind: EdgeKind::Contains,
+            });
         }
     }
 
@@ -521,4 +573,30 @@ fn dotted_name(node: Syntax<'_>, module: &ModuleContext<'_>) -> Option<String> {
         }
         _ => None,
     }
+}
+
+/// The plain names an assignment binds: `x = …`, `x: T = …`, `x: T`, each name of
+/// `a, (b, *rest) = …`, and each name of a chain `a = b = …`. Attribute and subscript
+/// targets bind no name.
+fn assigned_names(assignment: Syntax<'_>, module: &ModuleContext<'_>) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut current = Some(assignment);
+    while let Some(node) = current.filter(|node| node.kind() == "assignment") {
+        let mut pending: Vec<Syntax<'_>> = node.child_by_field_name("left").into_iter().collect();
+        while let Some(target) = pending.pop() {
+            match target.kind() {
+                "identifier" => names.push(module.text(target)),
+                "pattern_list" | "tuple_pattern" | "list_pattern" | "list_splat_pattern" => {
+                    let mut cursor = target.walk();
+                    let mut children: Vec<Syntax<'_>> =
+                        target.named_children(&mut cursor).collect();
+                    children.reverse();
+                    pending.extend(children);
+                }
+                _ => {}
+            }
+        }
+        current = node.child_by_field_name("right");
+    }
+    names
 }
