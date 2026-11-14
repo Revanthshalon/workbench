@@ -444,6 +444,48 @@ fn a_file_whose_collision_status_changed_is_parsed_again() -> CliResult<()> {
 }
 
 #[test]
+fn adding_a_submodule_reparses_the_init_that_defines_its_name() -> CliResult<()> {
+    let scratch = Scratch::new("submodule", TWO_PROJECTS)?;
+    scratch.write("api/pkg/__init__.py", "settings = 1\n")?;
+    scratch.write("api/pkg/settings.py", "")?;
+    // The last run saw only `pkg/__init__.py`, with this content and no `pkg.settings`.
+    let storage = FakeStorage {
+        stored: HashMap::from([(
+            "api".to_owned(),
+            HashMap::from([(
+                "pkg/__init__.py".to_owned(),
+                content_hash(b"settings = 1\n"),
+            )]),
+        )]),
+        ..FakeStorage::default()
+    };
+
+    scratch.run(
+        &only("api"),
+        &Run {
+            storage: &storage,
+            python: &PythonParser,
+            typescript: &TextParser,
+            interrupted: false,
+        },
+    )?;
+
+    let written = storage.written.borrow();
+    let init = written[0]
+        .1
+        .upserted
+        .iter()
+        .find(|graph| graph.path == "pkg/__init__.py");
+    assert!(init.is_some_and(|graph| {
+        graph
+            .nodes
+            .iter()
+            .any(|node| node.id == "api:pkg.settings@pkg/__init__.py")
+    }));
+    Ok(())
+}
+
+#[test]
 fn log_graph_writes_each_parsed_files_graph_to_the_log() -> CliResult<()> {
     let scratch = Scratch::new("log-graph", TWO_PROJECTS)?;
     scratch.write("api/app.py", "class Service:\n    def run(self): ...\n")?;

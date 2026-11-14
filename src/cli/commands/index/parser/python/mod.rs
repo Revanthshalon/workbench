@@ -10,7 +10,7 @@
 //! names bound where the class is defined. The walk keeps those bindings per scope,
 //! in source order, as Python does.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use tree_sitter::{Node as Syntax, Parser as TreeSitter, Tree};
 
@@ -108,6 +108,8 @@ fn parse_python_checked(file: &SourceFile<'_>, source: &str) -> Option<PythonPar
     };
     let mut walk = Walk {
         project: file.project,
+        path: file.path,
+        modules: file.modules,
         suffix: id_suffix(file),
         module: &module,
         frames: vec![Frame::default()],
@@ -238,6 +240,10 @@ struct Frame {
 
 struct Walk<'a> {
     project: &'a str,
+    /// The file's path in the project.
+    path: &'a str,
+    /// The module names of every file in the project, if known.
+    modules: Option<&'a HashSet<String>>,
     /// Appended to every id: `@pyi`, `@<path>`, or nothing.
     suffix: String,
     module: &'a ModuleContext<'a>,
@@ -288,7 +294,7 @@ impl Walk<'_> {
             (_, false) => NodeKind::Function,
         };
 
-        let qualified_name = scope.qualify(name);
+        let qualified_name = self.claim(scope.qualify(name));
         let id = self.id(&qualified_name);
         self.add_node(
             &scope.id,
@@ -323,6 +329,21 @@ impl Walk<'_> {
         }
     }
 
+    /// `qualified_name`, or `qualified_name@<path>` when it is a module-level name
+    /// equal to another file's module: in Python the submodule wins that name.
+    fn claim(&self, qualified_name: String) -> String {
+        let takes_a_module = self.frames.len() == 1
+            && qualified_name != self.module.name
+            && self
+                .modules
+                .is_some_and(|modules| modules.contains(&qualified_name));
+        if takes_a_module {
+            format!("{qualified_name}@{}", self.path)
+        } else {
+            qualified_name
+        }
+    }
+
     /// Adds `node` and a `Contains` edge to it from `parent`.
     fn add_node(&mut self, parent: &NodeId, node: Node) {
         self.graph.edges.push(Edge {
@@ -350,7 +371,8 @@ impl Walk<'_> {
             .flat_map(|assignment| assigned_names(assignment, self.module))
             .collect();
         for name in names {
-            self.bind(name.clone(), join(self.module.name, &name));
+            let qualified_name = self.claim(join(self.module.name, &name));
+            self.bind(name.clone(), qualified_name);
             self.record_variable(name, span(statement));
         }
     }
@@ -379,7 +401,7 @@ impl Walk<'_> {
             if module.name_counts.contains_key(&name) {
                 continue;
             }
-            let id = self.id(&join(self.module.name, &name));
+            let id = self.id(&self.claim(join(self.module.name, &name)));
             self.add_node(
                 &module.id,
                 Node {

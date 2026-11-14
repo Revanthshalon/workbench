@@ -4,6 +4,8 @@
 //! workspace and project nodes are not part of a file's graph: they come from the
 //! workspace config, and the store links each file's module node to its project.
 
+use std::collections::HashSet;
+
 /// A node's id: `<project-id>:<qualified name>`, unique across the workspace.
 pub type NodeId = String;
 
@@ -81,6 +83,10 @@ pub struct SourceFile<'a> {
     /// The file's own path when another file of the project has the same module name
     /// and wins it. Every id from this file then ends in `@<path>`.
     pub disambiguator: Option<&'a str>,
+    /// The module names of every file in the project. A module-level name equal to
+    /// one of them (other than the file's own) gets `@<path>`, so it never takes a
+    /// submodule's id.
+    pub modules: Option<&'a HashSet<String>>,
 }
 
 impl SourceFile<'_> {

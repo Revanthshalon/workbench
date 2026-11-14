@@ -251,7 +251,7 @@ fn index_project(
         extensions,
         src_is_package,
     };
-    let disambiguated = collision_losers(&naming, &all_files, context.logger);
+    let modules = project_modules(&naming, &all_files, context.logger);
 
     let files = ProjectFiles {
         project: &project.id,
@@ -264,7 +264,8 @@ fn index_project(
         any_size: args.force,
         log_graph: args.log_graph,
         src_is_package,
-        disambiguated: &disambiguated,
+        disambiguated: &modules.losers,
+        modules: &modules.names,
     };
     let progress = progress_bar(context.progress, &project.id, candidates.len());
     let mut changes = ProjectChanges::default();
@@ -335,6 +336,16 @@ struct ProjectFiles<'a> {
     src_is_package: bool,
     /// Paths of files that lose a module-name collision; their ids get `@<path>`.
     disambiguated: &'a HashSet<String>,
+    /// The module names of every file in the project.
+    modules: &'a HashSet<String>,
+}
+
+/// What a project's files say about its modules.
+struct ProjectModules {
+    /// Paths of files that lose a module-name collision.
+    losers: HashSet<String>,
+    /// The module name of every file.
+    names: HashSet<String>,
 }
 
 /// How a project's files are named as modules.
@@ -344,12 +355,13 @@ struct ModuleNaming<'a> {
     src_is_package: bool,
 }
 
-/// The paths of the files that lose a module-name collision, logging each collision.
-fn collision_losers(
+/// The module names of the project's files, and the files that lose a module-name
+/// collision, logging each collision.
+fn project_modules(
     naming: &ModuleNaming<'_>,
     all_files: &[PathBuf],
     logger: &Logger,
-) -> HashSet<String> {
+) -> ProjectModules {
     let modules: Vec<ModuleFile> = all_files
         .iter()
         .map(|relative| {
@@ -359,6 +371,7 @@ fn collision_losers(
                 path: &path,
                 src_is_package: naming.src_is_package,
                 disambiguator: None,
+                modules: None,
             }
             .module_name();
             ModuleFile {
@@ -380,7 +393,10 @@ fn collision_losers(
         ));
         losers.extend(collision.losers);
     }
-    losers
+    ProjectModules {
+        losers,
+        names: modules.into_iter().map(|file| file.module).collect(),
+    }
 }
 
 /// Reads and parses one file of a project.
@@ -418,6 +434,7 @@ fn index_file(files: &ProjectFiles<'_>, relative: &Path, context: &Context<'_>) 
         path: &key,
         src_is_package: files.src_is_package,
         disambiguator: files.disambiguated.contains(&key).then_some(key.as_str()),
+        modules: Some(files.modules),
     };
     let hash = file_hash(&contents, &file);
     if files.previous.get(&key) == Some(&hash) {
@@ -492,7 +509,30 @@ fn file_hash(contents: &[u8], file: &SourceFile<'_>) -> u64 {
     if file.src_is_package {
         hash = fnv1a(hash, b"\0src-package");
     }
+    // A submodule's name, if the file defines it too, changes that definition's id.
+    let children = child_modules(file);
+    if !children.is_empty() {
+        hash = fnv1a(fnv1a(hash, b"\0children"), children.join("\0").as_bytes());
+    }
     hash
+}
+
+/// The module names directly below the file's own module, sorted.
+fn child_modules(file: &SourceFile<'_>) -> Vec<String> {
+    let prefix = format!("{}.", file.module_name());
+    let mut children: Vec<String> = file
+        .modules
+        .into_iter()
+        .flatten()
+        .filter(|module| {
+            module
+                .strip_prefix(&prefix)
+                .is_some_and(|last| !last.is_empty() && !last.contains('.'))
+        })
+        .cloned()
+        .collect();
+    children.sort();
+    children
 }
 
 /// FNV-1a: a stable 64-bit hash of a file's contents.

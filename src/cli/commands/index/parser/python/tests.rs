@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::{PythonParse, PythonParser, module_graph, parse_python_checked};
 use crate::cli::commands::index::parser::{ParseOutcome, Parser};
 use crate::graph::{FileGraph, NodeKind, ReferenceKind, SourceFile, Span};
@@ -19,6 +21,7 @@ fn parse_python(project: &str, path: &str, source: &str) -> PythonParse {
             path,
             src_is_package: false,
             disambiguator: None,
+            modules: None,
         },
         source,
     )
@@ -30,6 +33,7 @@ fn plain<'a>(project: &'a str, path: &'a str) -> SourceFile<'a> {
         path,
         src_is_package: false,
         disambiguator: None,
+        modules: None,
     }
 }
 
@@ -302,6 +306,7 @@ fn a_src_package_names_nodes_like_its_imports() {
         path: "src/models/user_models.py",
         src_is_package: true,
         disambiguator: None,
+        modules: None,
     };
     let source = "from src.models.main_model import MainModel\nfrom .main_model import Base\n\nclass User(MainModel): ...\nclass Admin(User): ...\n";
     let graph = parse_file(&file, source).graph;
@@ -444,6 +449,7 @@ fn a_disambiguated_file_suffixes_every_id_with_its_path() {
         path: "pkg/x.pyi",
         src_is_package: false,
         disambiguator: Some("pkg/x.pyi"),
+        modules: None,
     };
     let graph = parse_file(&file, "class Foo: ...\nv = 1\n").graph;
     assert_eq!(graph.module, "api:pkg.x@pkg/x.pyi");
@@ -457,4 +463,33 @@ fn very_long_dotted_bases_do_not_overflow_the_stack() {
     let dotted = format!("a{}", ".b".repeat(50_000));
     let graph = parse_python("api", "m.py", &format!("class C({dotted}): ...\n")).graph;
     assert_eq!(inherits_targets(&graph), [dotted.as_str()]);
+}
+
+#[test]
+fn module_level_names_equal_to_a_submodule_get_the_path_suffix() {
+    let modules: HashSet<String> = ["pkg", "pkg.settings", "pkg.Loader"]
+        .map(str::to_owned)
+        .into();
+    let file = SourceFile {
+        project: "api",
+        path: "pkg/__init__.py",
+        src_is_package: false,
+        disambiguator: None,
+        modules: Some(&modules),
+    };
+    let source = "settings = load()\nclass Loader:\n    def run(self): ...\nclass Other(Loader): ...\nother = 1\n";
+    let graph = parse_file(&file, source).graph;
+    let ids: Vec<&str> = graph.nodes.iter().map(|node| node.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        [
+            "api:pkg",
+            "api:pkg.Loader@pkg/__init__.py",
+            "api:pkg.Loader@pkg/__init__.py.run",
+            "api:pkg.Other",
+            "api:pkg.settings@pkg/__init__.py",
+            "api:pkg.other",
+        ]
+    );
+    assert_eq!(inherits_targets(&graph), ["pkg.Loader@pkg/__init__.py"]);
 }

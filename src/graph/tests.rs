@@ -6,6 +6,7 @@ fn source<'a>(project: &'a str, path: &'a str) -> SourceFile<'a> {
         path,
         src_is_package: false,
         disambiguator: None,
+        modules: None,
     }
 }
 
@@ -144,6 +145,7 @@ fn module_only_graphs_carry_the_disambiguator() {
         path: "a.js",
         src_is_package: false,
         disambiguator: Some("a.js"),
+        modules: None,
     };
     let graph = FileGraph::module_only(&file, 1);
     assert_eq!(graph.module, "web:a@a.js");
