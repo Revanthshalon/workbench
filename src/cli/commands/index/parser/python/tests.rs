@@ -1,5 +1,5 @@
 use super::parse_python;
-use crate::graph::{FileGraph, NodeKind, Span};
+use crate::graph::{FileGraph, NodeKind, ReferenceKind, Span};
 
 fn ids(graph: &FileGraph) -> Vec<(&str, NodeKind)> {
     graph
@@ -14,6 +14,28 @@ fn contains(graph: &FileGraph) -> Vec<(&str, &str)> {
         .edges
         .iter()
         .map(|edge| (edge.from.as_str(), edge.to.as_str()))
+        .collect()
+}
+
+fn refs(graph: &FileGraph) -> Vec<(&str, &str, ReferenceKind)> {
+    graph
+        .references
+        .iter()
+        .map(|reference| {
+            (
+                reference.from.as_str(),
+                reference.target.as_str(),
+                reference.kind,
+            )
+        })
+        .collect()
+}
+
+fn targets(graph: &FileGraph) -> Vec<&str> {
+    graph
+        .references
+        .iter()
+        .map(|reference| reference.target.as_str())
         .collect()
 }
 
@@ -101,4 +123,68 @@ fn non_ascii_names_and_crlf_lines() {
             end_line: 4
         }
     );
+}
+
+#[test]
+fn every_import_form() {
+    let source = "import os.path\nimport numpy as np\nfrom a.b import c, d as e\nfrom m import *\n\ndef f():\n    import json\n";
+    let graph = parse_python("api", "pkg/mod.py", source).graph;
+    assert_eq!(
+        refs(&graph),
+        [
+            ("api:pkg.mod", "os.path", ReferenceKind::Imports),
+            ("api:pkg.mod", "numpy", ReferenceKind::Imports),
+            ("api:pkg.mod", "a.b.c", ReferenceKind::Imports),
+            ("api:pkg.mod", "a.b.d", ReferenceKind::Imports),
+            ("api:pkg.mod", "m", ReferenceKind::Imports),
+            ("api:pkg.mod.f", "json", ReferenceKind::Imports),
+        ]
+    );
+    assert_eq!(graph.references[5].line, 7);
+}
+
+#[test]
+fn relative_imports_resolve_against_the_package() {
+    let module = parse_python(
+        "api",
+        "pkg/sub/mod.py",
+        "from .x import y\nfrom .. import z\nfrom . import w\n",
+    )
+    .graph;
+    assert_eq!(targets(&module), ["pkg.sub.x.y", "pkg.z", "pkg.sub.w"]);
+    let init = parse_python("api", "pkg/sub/__init__.py", "from .x import y\n").graph;
+    assert_eq!(targets(&init), ["pkg.sub.x.y"]);
+}
+
+#[test]
+fn relative_imports_above_the_top_package_keep_their_dots() {
+    let graph = parse_python("api", "a/b.py", "from ... import x\nfrom ...c import d\n").graph;
+    assert_eq!(targets(&graph), ["...x", "...c.d"]);
+}
+
+#[test]
+fn base_classes_resolve_through_imports_and_local_classes() {
+    let source = "import abc\nfrom models import Base as B\nfrom typing import Generic\n\nclass Local: ...\nclass C(B, Local, abc.ABC, Exception, Generic[T], metaclass=Meta): ...\n";
+    let graph = parse_python("api", "m.py", source).graph;
+    let inherits: Vec<_> = refs(&graph)
+        .into_iter()
+        .filter(|(_, _, kind)| *kind == ReferenceKind::Inherits)
+        .collect();
+    assert_eq!(
+        inherits,
+        [
+            ("api:m.C", "models.Base", ReferenceKind::Inherits),
+            ("api:m.C", "m.Local", ReferenceKind::Inherits),
+            ("api:m.C", "abc.ABC", ReferenceKind::Inherits),
+            ("api:m.C", "Exception", ReferenceKind::Inherits),
+            ("api:m.C", "typing.Generic", ReferenceKind::Inherits),
+        ]
+    );
+}
+
+#[test]
+fn decorated_local_classes_resolve_as_bases() {
+    let source = "@dataclass\nclass Base: ...\n\nclass C(Base): ...\n";
+    let graph = parse_python("api", "m.py", source).graph;
+    assert_eq!(targets(&graph), ["m.Base"]);
 }
