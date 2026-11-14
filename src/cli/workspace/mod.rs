@@ -15,6 +15,7 @@ use crate::cli::{
     errors::{CliErrors, CliResult},
 };
 
+/// A workspace: its root directory and the contents of its `.workbench/config.yml`.
 #[derive(Debug)]
 pub struct Workspace {
     root: PathBuf,
@@ -42,6 +43,23 @@ pub struct StorageSettings {
     pub host: String,
     pub port: u16,
     pub namespace: Option<String>,
+    pub username: Option<String>,
+    /// The *name* of the environment variable holding the password, never the password.
+    pub password_env: Option<String>,
+}
+
+impl StorageSettings {
+    /// The password, read through `lookup` from the variable `password_env` names.
+    ///
+    /// `lookup` is `|name| std::env::var(name).ok()` outside tests.
+    pub fn password(&self, lookup: impl Fn(&str) -> Option<String>) -> CliResult<Option<String>> {
+        let Some(variable) = &self.password_env else {
+            return Ok(None);
+        };
+        lookup(variable)
+            .map(Some)
+            .ok_or_else(|| CliErrors::MissingPasswordVariable(variable.clone()))
+    }
 }
 
 impl Workspace {
@@ -61,6 +79,7 @@ impl Workspace {
         Err(CliErrors::WorkspaceNotFound(start))
     }
 
+    /// The workspace root, the directory holding `.workbench/`.
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -92,9 +111,14 @@ impl Workspace {
             namespace: field("namespace")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
+            username: field("username").and_then(Value::as_str).map(str::to_owned),
+            password_env: field("password_env")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
         })
     }
 
+    /// The path of `.workbench/config.yml`.
     pub fn config_path(&self) -> &Path {
         &self.config_path
     }
@@ -106,6 +130,7 @@ impl Workspace {
             .join(WORKBENCH_MEMORY_DIRECTORY)
     }
 
+    /// The projects listed in the config, in order.
     pub fn projects(&self) -> CliResult<Vec<ExistingProject>> {
         Ok(self
             .parse(&self.config)?
@@ -324,3 +349,6 @@ fn block_end(lines: &[String], key_index: usize) -> (usize, String) {
         });
     (end, indent.to_owned())
 }
+
+#[cfg(test)]
+mod tests;
