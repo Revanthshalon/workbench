@@ -10,6 +10,7 @@ name = "workbench"
 path = "src/main.rs"
 
 [features]
+default = ["memgraph"]
 postgres = []
 # The Memgraph client compiles a C library and needs cmake and OpenSSL.
 memgraph = ["dep:rsmgclient"]

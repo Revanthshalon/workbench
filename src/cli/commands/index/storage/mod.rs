@@ -77,3 +77,7 @@ impl Storage for MemgraphPlaceholder {
         )
     }
 }
+
+/// Writing to Memgraph, built with the default `memgraph` feature.
+#[cfg(feature = "memgraph")]
+pub mod memgraph;
