@@ -65,6 +65,26 @@ pub struct Reference {
     pub line: usize,
 }
 
+/// Where a file sits: its project, its path in the project, and how the project
+/// lays out its code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SourceFile<'a> {
+    pub project: &'a str,
+    /// Relative to the project, with `/` separators.
+    pub path: &'a str,
+    /// Whether the project's top-level `src/` directory is itself a package (Python:
+    /// it has an `__init__.py`). Then `src` is part of module names; otherwise it is
+    /// only a folder holding the packages (the "src layout").
+    pub src_is_package: bool,
+}
+
+impl SourceFile<'_> {
+    /// The file's dotted module name.
+    pub fn module_name(&self) -> String {
+        module_name(self.path, self.src_is_package)
+    }
+}
+
 /// Everything parsed from one file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileGraph {
@@ -82,11 +102,11 @@ pub struct FileGraph {
 impl FileGraph {
     /// A graph with only the file's module node, for files whose language has no
     /// parser yet.
-    pub fn module_only(project: &str, relative_path: &str, line_count: usize) -> Self {
-        let name = module_name(relative_path);
-        let module = node_id(project, &name);
+    pub fn module_only(file: &SourceFile<'_>, line_count: usize) -> Self {
+        let name = file.module_name();
+        let module = node_id(file.project, &name);
         Self {
-            path: relative_path.to_owned(),
+            path: file.path.to_owned(),
             hash: 0,
             nodes: vec![Node {
                 id: module.clone(),
@@ -104,13 +124,66 @@ impl FileGraph {
     }
 }
 
+impl FileGraph {
+    /// The graph as readable text: its nodes, edges and references, one per line.
+    pub fn describe(&self) -> String {
+        let nodes = self.nodes.iter().map(|node| {
+            format!(
+                "{:<8} {} (lines {}-{})",
+                format!("{:?}", node.kind),
+                node.id,
+                node.span.start_line,
+                node.span.end_line
+            )
+        });
+        let edges = self.edges.iter().map(|edge| {
+            format!(
+                "{:<8} {} -> {}",
+                format!("{:?}", edge.kind),
+                edge.from,
+                edge.to
+            )
+        });
+        let references = self.references.iter().map(|reference| {
+            format!(
+                "{:<8} {} -> {} (line {})",
+                format!("{:?}", reference.kind),
+                reference.from,
+                reference.target,
+                reference.line
+            )
+        });
+        [
+            section("nodes", nodes),
+            section("edges", edges),
+            section("references", references),
+        ]
+        .join("\n")
+    }
+}
+
+/// `title:` and its lines indented below it, or `title: none`.
+fn section(title: &str, lines: impl Iterator<Item = String>) -> String {
+    let lines: Vec<String> = lines.map(|line| format!("  {line}")).collect();
+    if lines.is_empty() {
+        format!("{title}: none")
+    } else {
+        format!("{title}:\n{}", lines.join("\n"))
+    }
+}
+
 /// The dotted module name of a file, from its `/`-separated path in the project.
 ///
-/// The extension is dropped, `pkg/__init__.py` is the package `pkg`, and a leading
-/// `src/` (the "src layout") is not part of the name. A root `__init__.py` keeps the
-/// name `__init__`, so a module name is never empty.
-pub fn module_name(relative_path: &str) -> String {
-    let path = relative_path.strip_prefix("src/").unwrap_or(relative_path);
+/// The extension is dropped and `pkg/__init__.py` is the package `pkg`. A leading
+/// `src/` is part of the name only when `src_is_package`; otherwise it is the "src
+/// layout" folder and is dropped. A root `__init__.py` keeps the name `__init__`, so
+/// a module name is never empty.
+pub fn module_name(relative_path: &str, src_is_package: bool) -> String {
+    let path = if src_is_package {
+        relative_path
+    } else {
+        relative_path.strip_prefix("src/").unwrap_or(relative_path)
+    };
     let mut parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
     if let Some(last) = parts.last_mut() {
         *last = last.rsplit_once('.').map_or(*last, |(stem, _)| stem);

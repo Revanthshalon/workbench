@@ -76,6 +76,8 @@ pub const STORAGE_KEY: &str = "storage";
 pub const DEFAULT_STORAGE_HOST: &str = "localhost";
 pub const DEFAULT_STORAGE_PORT: u16 = 7687;
 
+/// Either file makes a project's top-level `src/` a package, part of module names.
+pub const SRC_PACKAGE_FILES: [&str; 2] = ["src/__init__.py", "src/__init__.pyi"];
 pub const INDEX_LOCK_FILE: &str = "index.lock";
 /// Files larger than this are skipped rather than parsed.
 pub const MAX_INDEXED_FILE_BYTES: u64 = 1024 * 1024;

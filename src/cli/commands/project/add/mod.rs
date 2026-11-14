@@ -81,6 +81,7 @@ pub fn run(args: AddArgs) -> CliResult<()> {
             full: false,
             changed: false,
             force: false,
+            log_graph: false,
         });
         if indexed.is_err() {
             eprintln!(

@@ -22,7 +22,7 @@ use crate::{
         log::Logger,
         workspace,
     },
-    graph::{FileGraph, ReferenceKind},
+    graph::{FileGraph, ReferenceKind, SourceFile},
 };
 
 const TWO_PROJECTS: &str = "version: 1
@@ -171,14 +171,14 @@ impl Storage for FakeStorage {
 struct PartialParser;
 
 impl Parser for PartialParser {
-    fn parse(&self, project: &str, relative_path: &str, contents: &[u8]) -> ParseOutcome {
+    fn parse(&self, file: &SourceFile<'_>, contents: &[u8]) -> ParseOutcome {
         if contents.windows(7).any(|window| window == b"PARTIAL") {
             ParseOutcome::Partial(
-                FileGraph::module_only(project, relative_path, 1),
+                FileGraph::module_only(file, 1),
                 "unsupported syntax".to_owned(),
             )
         } else {
-            TextParser.parse(project, relative_path, contents)
+            TextParser.parse(file, contents)
         }
     }
 }
@@ -189,6 +189,7 @@ fn all() -> IndexArgs {
         full: false,
         changed: false,
         force: false,
+        log_graph: false,
     }
 }
 
@@ -208,7 +209,7 @@ fn parses_index_flags() {
     let cli = Cli::try_parse_from(["workbench", "index", "--id", "api", "--full"]);
     assert!(matches!(
         cli.map(|cli| cli.command),
-        Ok(Commands::Index(IndexArgs { id: Some(id), full: true, changed: false, force: false })) if id == "api"
+        Ok(Commands::Index(IndexArgs { id: Some(id), full: true, changed: false, force: false, log_graph: false })) if id == "api"
     ));
     assert!(Cli::try_parse_from(["workbench", "index", "--full", "--changed"]).is_err());
 }
@@ -329,6 +330,61 @@ fn python_projects_are_parsed_into_graphs() -> CliResult<()> {
     assert!(graph.references.iter().any(|reference| {
         reference.target == "billing.base.Model" && reference.kind == ReferenceKind::Inherits
     }));
+    Ok(())
+}
+
+#[test]
+fn a_src_package_keeps_src_in_module_names() -> CliResult<()> {
+    let scratch = Scratch::new("src-package", TWO_PROJECTS)?;
+    scratch.write("api/src/__init__.py", "")?;
+    scratch.write("api/src/config.py", "from src.util import helper\n")?;
+    scratch.write("web/src/main.ts", "export {}")?;
+    let storage = FakeStorage::default();
+
+    scratch.run(
+        &all(),
+        &Run {
+            storage: &storage,
+            python: &PythonParser,
+            typescript: &TextParser,
+            interrupted: false,
+        },
+    )?;
+
+    let written = storage.written.borrow();
+    let modules: Vec<&str> = written
+        .iter()
+        .flat_map(|(_, changes)| changes.upserted.iter().map(|graph| graph.module.as_str()))
+        .collect();
+    assert_eq!(modules, ["api:src", "api:src.config", "web:main"]);
+    Ok(())
+}
+
+#[test]
+fn log_graph_writes_each_parsed_files_graph_to_the_log() -> CliResult<()> {
+    let scratch = Scratch::new("log-graph", TWO_PROJECTS)?;
+    scratch.write("api/app.py", "class Service:\n    def run(self): ...\n")?;
+    let python = Run {
+        storage: &FakeStorage::default(),
+        python: &PythonParser,
+        typescript: &TextParser,
+        interrupted: false,
+    };
+
+    scratch.run(&only("api"), &python)?;
+    assert!(!scratch.log().contains("graph of"));
+
+    scratch.run(
+        &IndexArgs {
+            log_graph: true,
+            ..only("api")
+        },
+        &python,
+    )?;
+    let log = scratch.log();
+    assert!(log.contains("INFO [index] graph of `api` app.py"));
+    assert!(log.contains("    Method   api:app.Service.run (lines 2-2)"));
+    assert!(log.contains("    Contains api:app.Service -> api:app.Service.run"));
     Ok(())
 }
 

@@ -1,14 +1,34 @@
 use super::{PythonParse, PythonParser, module_graph, parse_python_checked};
 use crate::cli::commands::index::parser::{ParseOutcome, Parser};
-use crate::graph::{FileGraph, NodeKind, ReferenceKind, Span};
+use crate::graph::{FileGraph, NodeKind, ReferenceKind, SourceFile, Span};
 
 /// Parses a snippet; tree-sitter never gives up on these, but if it did the graph
 /// would hold only the module node.
-fn parse_python(project: &str, relative_path: &str, source: &str) -> PythonParse {
-    parse_python_checked(project, relative_path, source).unwrap_or_else(|| PythonParse {
-        graph: module_graph(project, relative_path, source),
+fn parse_file(file: &SourceFile<'_>, source: &str) -> PythonParse {
+    parse_python_checked(file, source).unwrap_or_else(|| PythonParse {
+        graph: module_graph(file, source),
         error_lines: Vec::new(),
     })
+}
+
+/// Parses a snippet in a project whose `src/` is not a package.
+fn parse_python(project: &str, path: &str, source: &str) -> PythonParse {
+    parse_file(
+        &SourceFile {
+            project,
+            path,
+            src_is_package: false,
+        },
+        source,
+    )
+}
+
+fn plain<'a>(project: &'a str, path: &'a str) -> SourceFile<'a> {
+    SourceFile {
+        project,
+        path,
+        src_is_package: false,
+    }
 }
 
 fn ids(graph: &FileGraph) -> Vec<(&str, NodeKind)> {
@@ -203,7 +223,7 @@ fn decorated_local_classes_resolve_as_bases() {
 fn syntax_errors_give_a_partial_graph_of_the_rest() -> Result<(), Box<dyn std::error::Error>> {
     let source = "def ok():\n    pass\n\ndef broken(:\n    pass\n\nclass Fine: ...\n";
     let ParseOutcome::Partial(graph, details) =
-        PythonParser.parse("api", "m.py", source.as_bytes())
+        PythonParser.parse(&plain("api", "m.py"), source.as_bytes())
     else {
         return Err("expected a partial parse".into());
     };
@@ -219,7 +239,7 @@ fn syntax_errors_give_a_partial_graph_of_the_rest() -> Result<(), Box<dyn std::e
 #[test]
 fn invalid_utf8_fails() {
     assert!(matches!(
-        PythonParser.parse("api", "m.py", &[0xff, 0xfe]),
+        PythonParser.parse(&plain("api", "m.py"), &[0xff, 0xfe]),
         ParseOutcome::Failed(details) if details.starts_with("not valid UTF-8")
     ));
 }
@@ -227,7 +247,7 @@ fn invalid_utf8_fails() {
 #[test]
 fn clean_files_parse_fully() {
     assert!(matches!(
-        PythonParser.parse("api", "m.py", b"x = 1\n"),
+        PythonParser.parse(&plain("api", "m.py"), b"x = 1\n"),
         ParseOutcome::Parsed(_)
     ));
 }
@@ -259,4 +279,26 @@ fn relative_imports_in_a_root_init_resolve_from_the_top() {
         .graph;
         assert_eq!(targets(&graph), ["y.z", "x", "..w"], "in {path}");
     }
+}
+
+#[test]
+fn a_src_package_names_nodes_like_its_imports() {
+    let file = SourceFile {
+        project: "demo",
+        path: "src/models/user_models.py",
+        src_is_package: true,
+    };
+    let source = "from src.models.main_model import MainModel\nfrom .main_model import Base\n\nclass User(MainModel): ...\nclass Admin(User): ...\n";
+    let graph = parse_file(&file, source).graph;
+    assert_eq!(graph.module, "demo:src.models.user_models");
+    assert_eq!(graph.nodes[1].id, "demo:src.models.user_models.User");
+    assert_eq!(
+        targets(&graph),
+        [
+            "src.models.main_model.MainModel",
+            "src.models.main_model.Base",
+            "src.models.main_model.MainModel",
+            "src.models.user_models.User",
+        ]
+    );
 }

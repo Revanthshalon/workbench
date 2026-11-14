@@ -12,17 +12,18 @@ use std::{
 };
 
 use clap::Args;
-use console::colors_enabled;
+use console::{Style, colors_enabled};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
 use crate::{
     cli::{
-        constants::MAX_INDEXED_FILE_BYTES,
+        constants::{MAX_INDEXED_FILE_BYTES, SRC_PACKAGE_FILES},
         errors::{CliErrors, CliResult},
         log::Logger,
+        table,
         workspace::{ExistingProject, Workspace},
     },
-    graph::FileGraph,
+    graph::{FileGraph, SourceFile},
 };
 
 mod discover;
@@ -53,6 +54,9 @@ pub struct IndexArgs {
     /// Parse files of any size. Without it, files over 1 MiB are skipped.
     #[arg(long)]
     pub force: bool,
+    /// Write every parsed file's graph (nodes, edges, references) to the log.
+    #[arg(long)]
+    pub log_graph: bool,
 }
 
 /// Set by Ctrl-C; the run stops before the next file.
@@ -80,6 +84,19 @@ pub fn run(args: &IndexArgs) -> CliResult<()> {
     let run = execute(args, &context)?;
     for line in run.summary(&storage.describe(), colors_enabled()) {
         println!("{line}");
+    }
+    if args.log_graph {
+        println!(
+            "{}",
+            table::paint(
+                &Style::new().dim(),
+                &format!(
+                    "Graphs of parsed files are in {}",
+                    workspace.relative_path(logger.path())
+                ),
+                colors_enabled(),
+            )
+        );
     }
     let problems = run.problems();
     if problems.is_empty() {
@@ -220,6 +237,10 @@ fn index_project(
         },
         previous,
         any_size: args.force,
+        log_graph: args.log_graph,
+        src_is_package: SRC_PACKAGE_FILES
+            .iter()
+            .any(|file| project_root.join(file).is_file()),
     };
     let progress = progress_bar(context.progress, &project.id, candidates.len());
     let mut changes = ProjectChanges::default();
@@ -284,6 +305,10 @@ struct ProjectFiles<'a> {
     previous: &'a HashMap<String, u64>,
     /// Lifts the size limit (`--force`).
     any_size: bool,
+    /// Write each parsed file's graph to the log (`--log-graph`).
+    log_graph: bool,
+    /// Whether the project's `src/` is a package, so `src` is part of module names.
+    src_is_package: bool,
 }
 
 /// Reads and parses one file of a project.
@@ -320,20 +345,39 @@ fn index_file(files: &ProjectFiles<'_>, relative: &Path, context: &Context<'_>) 
     if files.previous.get(&key) == Some(&hash) {
         return FileOutcome::Unchanged;
     }
-    match files.parser.parse(files.project, &key, &contents) {
+    let file = SourceFile {
+        project: files.project,
+        path: &key,
+        src_is_package: files.src_is_package,
+    };
+    match files.parser.parse(&file, &contents) {
         ParseOutcome::Parsed(mut graph) => {
             graph.hash = hash;
+            log_graph(files, &graph, context);
             FileOutcome::Parsed(graph)
         }
         ParseOutcome::Partial(mut graph, details) => {
             log(&format!("parsed in part: {details}"));
             graph.hash = hash;
+            log_graph(files, &graph, context);
             FileOutcome::Partial(graph)
         }
         ParseOutcome::Failed(details) => {
             log(&format!("could not be parsed: {details}"));
             FileOutcome::Failed
         }
+    }
+}
+
+/// With `--log-graph`, writes a parsed file's graph to the log.
+fn log_graph(files: &ProjectFiles<'_>, graph: &FileGraph, context: &Context<'_>) {
+    if files.log_graph {
+        context.logger.info(&format!(
+            "graph of `{}` {}\n{}",
+            files.project,
+            graph.path,
+            graph.describe()
+        ));
     }
 }
 

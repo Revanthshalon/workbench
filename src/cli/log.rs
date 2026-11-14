@@ -46,6 +46,12 @@ impl Logger {
         self.write("ERROR", message).is_ok()
     }
 
+    /// Appends an informational entry, such as a parsed file's graph. Best effort,
+    /// like [`Self::error`].
+    pub fn info(&self, message: &str) -> bool {
+        self.write("INFO", message).is_ok()
+    }
+
     fn write(&self, level: &str, message: &str) -> std::io::Result<()> {
         if let Some(directory) = self.path.parent() {
             fs::create_dir_all(directory)?;

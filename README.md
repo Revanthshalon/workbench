@@ -188,6 +188,7 @@ workbench index --id api       # one project
 workbench index --full         # re-parse every file
 workbench index --changed      # only files git reports as changed
 workbench index --force        # also parse files over 1 MiB
+workbench index --log-graph    # write each parsed file's graph to the log
 ```
 
 | Option | Meaning |
@@ -196,6 +197,7 @@ workbench index --force        # also parse files over 1 MiB
 | `--full` | Re-parse every file, ignoring stored content hashes. Deleted files are still removed. |
 | `--changed` | Only files git reports as modified, staged, deleted or untracked since the last commit. Cannot be combined with `--full`. |
 | `--force` | Parse files of any size. Without it, files over 1 MiB are skipped. Symbolic links are always skipped. |
+| `--log-graph` | Write every parsed file's graph (its nodes, edges and references) to `.workbench/logs/workbench-YYYY-MM-DD.log`, for checking what the parser produced. Unchanged files are not parsed, so they are not logged. |
 
 Progress goes to stderr and the summary to stdout. The summary is a table with one
 row per project: status, files parsed, unchanged, removed, skipped, partial and
@@ -214,7 +216,8 @@ failed, nodes re-linked, and annotations that became stale or orphaned.
 
 - a node for the module, each class, each function and each method, identified as
   `<project-id>:<qualified name>` (for example `billing-api:billing.invoices.Invoice.total`;
-  a leading `src/` is not part of the module name, and `.pyi` stub ids end in `@pyi`);
+  a leading `src/` folder is not part of the module name unless `src/` has an
+  `__init__.py`, and `.pyi` stub ids end in `@pyi`);
 - `Contains` edges from each scope to what is defined directly inside it;
 - `Imports` and `Inherits` references to dotted names, with relative imports and
   imported base classes resolved as far as the file allows.

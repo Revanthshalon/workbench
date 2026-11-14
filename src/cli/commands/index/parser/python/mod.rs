@@ -15,7 +15,8 @@ use tree_sitter::{Node as Syntax, Parser as TreeSitter, Tree};
 
 use super::{ParseOutcome, Parser};
 use crate::graph::{
-    Edge, EdgeKind, FileGraph, Node, NodeId, NodeKind, Reference, ReferenceKind, Span, node_id,
+    Edge, EdgeKind, FileGraph, Node, NodeId, NodeKind, Reference, ReferenceKind, SourceFile, Span,
+    node_id,
 };
 
 #[cfg(test)]
@@ -51,12 +52,12 @@ const STATEMENT_CONTAINERS: [&str; 13] = [
 pub struct PythonParser;
 
 impl Parser for PythonParser {
-    fn parse(&self, project: &str, relative_path: &str, contents: &[u8]) -> ParseOutcome {
+    fn parse(&self, file: &SourceFile<'_>, contents: &[u8]) -> ParseOutcome {
         let source = match std::str::from_utf8(contents) {
             Ok(source) => source,
             Err(error) => return ParseOutcome::Failed(format!("not valid UTF-8 text: {error}")),
         };
-        let Some(parse) = parse_python_checked(project, relative_path, source) else {
+        let Some(parse) = parse_python_checked(file, source) else {
             return ParseOutcome::Failed("the parser gave up".to_owned());
         };
         if parse.error_lines.is_empty() {
@@ -77,17 +78,18 @@ pub struct PythonParse {
     pub error_lines: Vec<usize>,
 }
 
-/// Parses `source`, the contents of `relative_path` in `project`, into its graph, or
-/// `None` when tree-sitter gives up.
-fn parse_python_checked(project: &str, relative_path: &str, source: &str) -> Option<PythonParse> {
+/// Parses `source`, the contents of `file`, into its graph, or `None` when tree-sitter
+/// gives up.
+fn parse_python_checked(file: &SourceFile<'_>, source: &str) -> Option<PythonParse> {
     let tree = syntax_tree(source)?;
-    let mut graph = module_graph(project, relative_path, source);
+    let mut graph = module_graph(file, source);
     let module_name = graph
         .nodes
         .first()
         .map(|module| module.name.clone())
         .unwrap_or_default();
-    let is_package = relative_path
+    let is_package = file
+        .path
         .rsplit('/')
         .next()
         .is_some_and(|file| file.starts_with(&format!("{PACKAGE_FILE_STEM}.")));
@@ -98,8 +100,8 @@ fn parse_python_checked(project: &str, relative_path: &str, source: &str) -> Opt
     };
     let names = name_map(tree.root_node(), &module);
     let mut walk = Walk {
-        project,
-        stub: relative_path.ends_with(STUB_EXTENSION),
+        project: file.project,
+        stub: file.path.ends_with(STUB_EXTENSION),
         module: &module,
         names: &names,
         graph: &mut graph,
@@ -113,9 +115,9 @@ fn parse_python_checked(project: &str, relative_path: &str, source: &str) -> Opt
 }
 
 /// The graph with only the file's module node, with the stub suffix for `.pyi` files.
-fn module_graph(project: &str, relative_path: &str, source: &str) -> FileGraph {
-    let mut graph = FileGraph::module_only(project, relative_path, source.lines().count());
-    if relative_path.ends_with(STUB_EXTENSION) {
+fn module_graph(file: &SourceFile<'_>, source: &str) -> FileGraph {
+    let mut graph = FileGraph::module_only(file, source.lines().count());
+    if file.path.ends_with(STUB_EXTENSION) {
         graph.module.push_str(STUB_SUFFIX);
         if let Some(module) = graph.nodes.first_mut() {
             module.id.clone_from(&graph.module);

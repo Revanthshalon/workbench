@@ -4,7 +4,7 @@
 //! without a parser yet use [`TextParser`], which only checks that the file is text
 //! and returns a graph with just the file's module node.
 
-use crate::graph::FileGraph;
+use crate::graph::{FileGraph, SourceFile};
 
 /// The tree-sitter parser for Python.
 pub mod python;
@@ -23,9 +23,9 @@ pub enum ParseOutcome {
 
 /// Parses one file of a project into its graph.
 pub trait Parser {
-    /// `relative_path` is relative to the project, with `/` separators; node ids
-    /// include `project`. The returned graph's hash is left for the caller to set.
-    fn parse(&self, project: &str, relative_path: &str, contents: &[u8]) -> ParseOutcome;
+    /// Node ids include `file.project`. The returned graph's hash is left for the
+    /// caller to set.
+    fn parse(&self, file: &SourceFile<'_>, contents: &[u8]) -> ParseOutcome;
 }
 
 /// For languages without a parser: a file parses when it is valid UTF-8 text.
@@ -33,13 +33,9 @@ pub trait Parser {
 pub struct TextParser;
 
 impl Parser for TextParser {
-    fn parse(&self, project: &str, relative_path: &str, contents: &[u8]) -> ParseOutcome {
+    fn parse(&self, file: &SourceFile<'_>, contents: &[u8]) -> ParseOutcome {
         match std::str::from_utf8(contents) {
-            Ok(text) => ParseOutcome::Parsed(FileGraph::module_only(
-                project,
-                relative_path,
-                text.lines().count(),
-            )),
+            Ok(text) => ParseOutcome::Parsed(FileGraph::module_only(file, text.lines().count())),
             Err(error) => ParseOutcome::Failed(format!("not valid UTF-8 text: {error}")),
         }
     }
