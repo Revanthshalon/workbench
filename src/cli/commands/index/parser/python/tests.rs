@@ -302,3 +302,18 @@ fn a_src_package_names_nodes_like_its_imports() {
         ]
     );
 }
+
+#[test]
+fn spaces_inside_dotted_bases_are_ignored() {
+    let graph = parse_python(
+        "api",
+        "m.py",
+        "import a.b\nclass C(a . b . X, (lambda: Base)()): ...\n",
+    )
+    .graph;
+    let inherits: Vec<_> = refs(&graph)
+        .into_iter()
+        .filter(|(_, _, kind)| *kind == ReferenceKind::Inherits)
+        .collect();
+    assert_eq!(inherits, [("api:m.C", "a.b.X", ReferenceKind::Inherits)]);
+}

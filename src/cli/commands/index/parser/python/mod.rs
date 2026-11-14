@@ -512,14 +512,28 @@ fn base_classes(
         .named_children(&mut cursor)
         .filter_map(|argument| match argument.kind() {
             "subscript" => argument.child_by_field_name("value"),
-            "identifier" | "attribute" => Some(argument),
-            _ => None,
+            _ => Some(argument),
         })
-        .map(|base| {
-            let dotted = module.text(base);
+        .filter_map(|base| dotted_name(base, module))
+        .map(|dotted| {
             let (first, rest) = dotted.split_once('.').unwrap_or((&dotted, ""));
             let resolved = names.get(first).map_or(first, String::as_str);
             join(resolved, rest)
         })
         .collect()
+}
+
+/// The dotted name an `identifier` or `attribute` expression spells, built from its
+/// identifiers so whitespace and comments inside it never reach the name. Any other
+/// expression, such as a call, has no dotted name.
+fn dotted_name(node: Syntax<'_>, module: &ModuleContext<'_>) -> Option<String> {
+    match node.kind() {
+        "identifier" => Some(module.text(node)),
+        "attribute" => {
+            let object = dotted_name(node.child_by_field_name("object")?, module)?;
+            let attribute = module.text(node.child_by_field_name("attribute")?);
+            Some(format!("{object}.{attribute}"))
+        }
+        _ => None,
+    }
 }
