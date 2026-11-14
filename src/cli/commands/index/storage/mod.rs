@@ -5,7 +5,10 @@
 
 use std::collections::HashMap;
 
-use crate::{cli::workspace::StorageSettings, graph::FileGraph};
+use crate::{
+    cli::workspace::{ExistingProject, StorageSettings},
+    graph::FileGraph,
+};
 
 /// What changed in one project since the last run.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -27,14 +30,26 @@ pub struct WriteResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageError(pub String);
 
+impl std::fmt::Display for StorageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for StorageError {}
+
 pub trait Storage {
     /// The content hash of every file stored for `project` by the last run.
     fn stored_hashes(&self, project: &str) -> Result<HashMap<String, u64>, StorageError>;
+    /// Writes one project's changed and removed files, all or nothing.
     fn write_project(
         &self,
-        project: &str,
+        project: &ExistingProject,
         changes: &ProjectChanges,
     ) -> Result<WriteResult, StorageError>;
+    /// Deletes every stored project whose id is not in `keep`, with all its data.
+    /// Returns the deleted ids, sorted.
+    fn remove_projects_except(&self, keep: &[&str]) -> Result<Vec<String>, StorageError>;
     /// One line for the summary saying where the index went.
     fn describe(&self) -> String;
 }
@@ -58,10 +73,14 @@ impl Storage for MemgraphPlaceholder {
 
     fn write_project(
         &self,
-        _project: &str,
+        _project: &ExistingProject,
         _changes: &ProjectChanges,
     ) -> Result<WriteResult, StorageError> {
         Ok(WriteResult::default())
+    }
+
+    fn remove_projects_except(&self, _keep: &[&str]) -> Result<Vec<String>, StorageError> {
+        Ok(Vec::new())
     }
 
     fn describe(&self) -> String {

@@ -297,7 +297,7 @@ fn index_project(
     changes.removed = removed_files(&stored, &candidates, deleted_candidates.as_deref());
     report.counts.removed = changes.removed.len();
 
-    match context.storage.write_project(&project.id, &changes) {
+    match context.storage.write_project(project, &changes) {
         Ok(written) => {
             report.counts.relinked = written.relinked;
             report.counts.stale_annotations = written.stale_annotations;

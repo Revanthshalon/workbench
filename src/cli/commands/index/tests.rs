@@ -142,14 +142,14 @@ impl Storage for FakeStorage {
 
     fn write_project(
         &self,
-        project: &str,
+        project: &workspace::ExistingProject,
         changes: &ProjectChanges,
     ) -> Result<WriteResult, StorageError> {
         if self.fail_writes {
             return Err(StorageError("connection refused".to_owned()));
         }
         self.written.borrow_mut().push((
-            project.to_owned(),
+            project.id.clone(),
             ProjectChanges {
                 upserted: changes.upserted.clone(),
                 removed: changes.removed.clone(),
@@ -160,6 +160,10 @@ impl Storage for FakeStorage {
             stale_annotations: 1,
             orphaned_annotations: 2,
         })
+    }
+
+    fn remove_projects_except(&self, _keep: &[&str]) -> Result<Vec<String>, StorageError> {
+        Ok(Vec::new())
     }
 
     fn describe(&self) -> String {
