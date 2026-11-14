@@ -11,15 +11,18 @@ use clap::Parser as _;
 
 use super::{
     Context, IndexArgs, content_hash, execute,
-    parser::{ParseOutcome, Parser, TextParser},
+    parser::{ParseOutcome, Parser, TextParser, python::PythonParser},
     report::{Counts, IndexRun, ProjectReport, Status},
     storage::{ProjectChanges, Storage, StorageError, WriteResult},
 };
-use crate::cli::{
-    Cli, Commands,
-    errors::{CliErrors, CliResult},
-    log::Logger,
-    workspace,
+use crate::{
+    cli::{
+        Cli, Commands,
+        errors::{CliErrors, CliResult},
+        log::Logger,
+        workspace,
+    },
+    graph::{FileGraph, ReferenceKind},
 };
 
 const TWO_PROJECTS: &str = "version: 1
@@ -36,6 +39,14 @@ projects:
 
 /// A scratch workspace that is removed when dropped.
 struct Scratch(PathBuf);
+
+/// What a test run indexes with.
+struct Run<'a> {
+    storage: &'a dyn Storage,
+    python: &'a dyn Parser,
+    typescript: &'a dyn Parser,
+    interrupted: bool,
+}
 
 impl Scratch {
     fn new(name: &str, config: &str) -> CliResult<Self> {
@@ -58,6 +69,25 @@ impl Scratch {
         workspace::Workspace::find(&self.0)
     }
 
+    fn run(&self, args: &IndexArgs, run: &Run<'_>) -> CliResult<IndexRun> {
+        let workspace = self.workspace()?;
+        let logger = Logger::new(workspace.root(), "index");
+        let interrupted = AtomicBool::new(run.interrupted);
+        execute(
+            args,
+            &Context {
+                workspace: &workspace,
+                storage: run.storage,
+                python_parser: run.python,
+                typescript_parser: run.typescript,
+                logger: &logger,
+                interrupted: &interrupted,
+                progress: false,
+            },
+        )
+    }
+
+    /// Indexes with one parser for every language.
     fn index_with(
         &self,
         args: &IndexArgs,
@@ -65,18 +95,13 @@ impl Scratch {
         parser: &dyn Parser,
         interrupted: bool,
     ) -> CliResult<IndexRun> {
-        let workspace = self.workspace()?;
-        let logger = Logger::new(workspace.root(), "index");
-        let interrupted = AtomicBool::new(interrupted);
-        execute(
+        self.run(
             args,
-            &Context {
-                workspace: &workspace,
+            &Run {
                 storage,
-                parser,
-                logger: &logger,
-                interrupted: &interrupted,
-                progress: false,
+                python: parser,
+                typescript: parser,
+                interrupted,
             },
         )
     }
@@ -146,11 +171,14 @@ impl Storage for FakeStorage {
 struct PartialParser;
 
 impl Parser for PartialParser {
-    fn parse(&self, path: &Path, contents: &[u8]) -> ParseOutcome {
+    fn parse(&self, project: &str, relative_path: &str, contents: &[u8]) -> ParseOutcome {
         if contents.windows(7).any(|window| window == b"PARTIAL") {
-            ParseOutcome::Partial("unsupported syntax".to_owned())
+            ParseOutcome::Partial(
+                FileGraph::module_only(project, relative_path, 1),
+                "unsupported syntax".to_owned(),
+            )
         } else {
-            TextParser.parse(path, contents)
+            TextParser.parse(project, relative_path, contents)
         }
     }
 }
@@ -259,6 +287,48 @@ fn force_parses_large_files_but_still_skips_symbolic_links() -> CliResult<()> {
     })?;
     assert_eq!(counts(&run), Some((2, links)));
     assert!(Cli::try_parse_from(["workbench", "index", "--force", "--full"]).is_ok());
+    Ok(())
+}
+
+#[test]
+fn python_projects_are_parsed_into_graphs() -> CliResult<()> {
+    let scratch = Scratch::new("graph", TWO_PROJECTS)?;
+    scratch.write(
+        "api/billing/models.py",
+        "from .base import Model\n\nclass Invoice(Model):\n    def total(self): ...\n",
+    )?;
+    let storage = FakeStorage::default();
+
+    let run = scratch.run(
+        &only("api"),
+        &Run {
+            storage: &storage,
+            python: &PythonParser,
+            typescript: &TextParser,
+            interrupted: false,
+        },
+    )?;
+
+    assert_eq!(
+        report(&run, "api").map(|report| report.counts.parsed),
+        Some(1)
+    );
+    let written = storage.written.borrow();
+    let graph = &written[0].1.upserted[0];
+    assert_eq!(graph.path, "billing/models.py");
+    assert_eq!(
+        graph.hash,
+        content_hash(fs::read(scratch.0.join("api/billing/models.py"))?.as_slice())
+    );
+    assert!(
+        graph
+            .nodes
+            .iter()
+            .any(|node| node.id == "api:billing.models.Invoice.total")
+    );
+    assert!(graph.references.iter().any(|reference| {
+        reference.target == "billing.base.Model" && reference.kind == ReferenceKind::Inherits
+    }));
     Ok(())
 }
 

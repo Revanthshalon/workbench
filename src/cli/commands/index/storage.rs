@@ -5,20 +5,13 @@
 
 use std::collections::HashMap;
 
-use crate::cli::workspace::StorageSettings;
-
-/// A file as written to the index.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IndexedFile {
-    /// Relative to the project, with `/` separators.
-    pub path: String,
-    pub hash: u64,
-}
+use crate::{cli::workspace::StorageSettings, graph::FileGraph};
 
 /// What changed in one project since the last run.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct ProjectChanges {
-    pub upserted: Vec<IndexedFile>,
+    /// The graphs of files that are new or changed.
+    pub upserted: Vec<FileGraph>,
     pub removed: Vec<String>,
 }
 

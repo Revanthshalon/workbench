@@ -178,8 +178,9 @@ the `storage` block of `.workbench/config.yml`. It never changes a project's fil
 
 > **Placeholders:** Memgraph is not set up yet, so nothing is stored and every run
 > treats all files as new (`unchanged`, `removed`, `re-linked`, `stale` and
-> `orphaned` stay at 0). "Parsing" currently only checks that a file is valid
-> UTF-8 text.
+> `orphaned` stay at 0). Python files are parsed into a code graph of modules,
+> classes, functions and methods, with their imports and base classes; TypeScript
+> files are only checked to be valid UTF-8 text. Nothing is stored yet.
 
 ```sh
 workbench index                # every project
@@ -208,6 +209,18 @@ failed, nodes re-linked, and annotations that became stale or orphaned.
   `.venv`), `node_modules`, `__pycache__`, `venv`, `dist`, `build`, `coverage`,
   `target`, and the project's configured venv.
 - Symbolic links are skipped, and so are files over 1 MiB unless `--force` is given.
+
+**Python parsing** (tree-sitter) produces, per file:
+
+- a node for the module, each class, each function and each method, identified as
+  `<project-id>:<qualified name>` (for example `billing-api:billing.invoices.Invoice.total`;
+  a leading `src/` is not part of the module name, and `.pyi` stub ids end in `@pyi`);
+- `Contains` edges from each scope to what is defined directly inside it;
+- `Imports` and `Inherits` references to dotted names, with relative imports and
+  imported base classes resolved as far as the file allows.
+
+A file with syntax errors is counted as `partial`: everything outside the broken
+parts is kept, and the log names the lines.
 
 **Exit code** is 1 if any file could not be read or parsed, a project could not be
 written or indexed, the lock could not be taken, or the run was interrupted
@@ -286,6 +299,7 @@ The code is organised as follows:
 src/
   main.rs                    # entry point and error reporting
   errors.rs                  # top-level error type
+  graph/                     # language-neutral code graph
   cli/
     mod.rs                   # argument definitions (clap)
     constants.rs             # file names, templates and detection tables
@@ -296,7 +310,8 @@ src/
     workspace.rs             # finds the workspace and edits its config
     commands/
       init/                  # `workbench init`
-      index/                 # `workbench index`: discovery, parser, storage, lock
+      index/                 # `workbench index`: discovery, parsers, storage, lock
+        parser/python/       # tree-sitter Python parser
       project/               # `workbench project`
         kinds.rs             # typed languages, dependency managers, frameworks
         add/                 # `workbench project add`

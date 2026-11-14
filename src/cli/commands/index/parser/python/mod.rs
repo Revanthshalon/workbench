@@ -13,6 +13,7 @@ use std::collections::HashMap;
 
 use tree_sitter::{Node as Syntax, Parser as TreeSitter, Tree};
 
+use super::{ParseOutcome, Parser};
 use crate::graph::{
     Edge, EdgeKind, FileGraph, Node, NodeId, NodeKind, Reference, ReferenceKind, Span, node_id,
 };
@@ -27,6 +28,30 @@ const STUB_SUFFIX: &str = "@pyi";
 /// `__init__.py` (or `.pyi`) makes its directory a package.
 const PACKAGE_FILE_STEM: &str = "__init__";
 
+/// Parses Python files with tree-sitter.
+#[derive(Debug)]
+pub struct PythonParser;
+
+impl Parser for PythonParser {
+    fn parse(&self, project: &str, relative_path: &str, contents: &[u8]) -> ParseOutcome {
+        let source = match std::str::from_utf8(contents) {
+            Ok(source) => source,
+            Err(error) => return ParseOutcome::Failed(format!("not valid UTF-8 text: {error}")),
+        };
+        let Some(parse) = parse_python_checked(project, relative_path, source) else {
+            return ParseOutcome::Failed("the parser gave up".to_owned());
+        };
+        if parse.error_lines.is_empty() {
+            return ParseOutcome::Parsed(parse.graph);
+        }
+        let lines: Vec<String> = parse.error_lines.iter().map(ToString::to_string).collect();
+        ParseOutcome::Partial(
+            parse.graph,
+            format!("syntax errors at lines {}", lines.join(", ")),
+        )
+    }
+}
+
 /// The graph of one Python file, and the lines tree-sitter could not parse.
 #[derive(Debug)]
 pub struct PythonParse {
@@ -34,47 +59,69 @@ pub struct PythonParse {
     pub error_lines: Vec<usize>,
 }
 
-/// Parses `source`, the contents of `relative_path` in `project`, into its graph.
-pub fn parse_python(project: &str, relative_path: &str, source: &str) -> PythonParse {
-    let stub = relative_path.ends_with(STUB_EXTENSION);
-    let mut graph = FileGraph::module_only(project, relative_path, source.lines().count());
-    if stub {
-        graph.module.push_str(STUB_SUFFIX);
-        if let Some(module) = graph.nodes.first_mut() {
-            module.id.clone_from(&graph.module);
-        }
-    }
+/// Parses `source`, the contents of `relative_path` in `project`, into its graph, or
+/// `None` when tree-sitter gives up.
+fn parse_python_checked(project: &str, relative_path: &str, source: &str) -> Option<PythonParse> {
+    let tree = syntax_tree(source)?;
+    let mut graph = module_graph(project, relative_path, source);
     let module_name = graph
         .nodes
         .first()
         .map(|module| module.name.clone())
         .unwrap_or_default();
-
-    if let Some(tree) = syntax_tree(source) {
-        let is_package = relative_path
-            .rsplit('/')
-            .next()
-            .is_some_and(|file| file.starts_with(&format!("{PACKAGE_FILE_STEM}.")));
-        let module = ModuleContext {
-            name: &module_name,
-            package: package_parts(&module_name, is_package),
-            source: source.as_bytes(),
-        };
-        let names = name_map(tree.root_node(), &module);
-        let mut walk = Walk {
-            project,
-            stub,
-            module: &module,
-            names: &names,
-            graph: &mut graph,
-        };
-        let mut module_scope = Scope::new(module_name.clone(), walk.graph.module.clone(), false);
-        walk.visit(tree.root_node(), &mut module_scope);
-    }
-    PythonParse {
+    let is_package = relative_path
+        .rsplit('/')
+        .next()
+        .is_some_and(|file| file.starts_with(&format!("{PACKAGE_FILE_STEM}.")));
+    let module = ModuleContext {
+        name: &module_name,
+        package: package_parts(&module_name, is_package),
+        source: source.as_bytes(),
+    };
+    let names = name_map(tree.root_node(), &module);
+    let mut walk = Walk {
+        project,
+        stub: relative_path.ends_with(STUB_EXTENSION),
+        module: &module,
+        names: &names,
+        graph: &mut graph,
+    };
+    let mut module_scope = Scope::new(module_name.clone(), walk.graph.module.clone(), false);
+    walk.visit(tree.root_node(), &mut module_scope);
+    Some(PythonParse {
         graph,
-        error_lines: Vec::new(),
+        error_lines: error_lines(tree.root_node()),
+    })
+}
+
+/// The graph with only the file's module node, with the stub suffix for `.pyi` files.
+fn module_graph(project: &str, relative_path: &str, source: &str) -> FileGraph {
+    let mut graph = FileGraph::module_only(project, relative_path, source.lines().count());
+    if relative_path.ends_with(STUB_EXTENSION) {
+        graph.module.push_str(STUB_SUFFIX);
+        if let Some(module) = graph.nodes.first_mut() {
+            module.id.clone_from(&graph.module);
+        }
     }
+    graph
+}
+
+/// The sorted 1-based lines where tree-sitter found an error or a missing token.
+///
+/// Only subtrees that contain an error are walked.
+fn error_lines(root: Syntax<'_>) -> Vec<usize> {
+    let mut lines = Vec::new();
+    let mut pending = vec![root];
+    while let Some(node) = pending.pop() {
+        if node.is_error() || node.is_missing() {
+            lines.push(node.start_position().row + 1);
+        }
+        let mut cursor = node.walk();
+        pending.extend(node.children(&mut cursor).filter(|child| child.has_error()));
+    }
+    lines.sort_unstable();
+    lines.dedup();
+    lines
 }
 
 fn syntax_tree(source: &str) -> Option<Tree> {

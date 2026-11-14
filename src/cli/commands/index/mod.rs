@@ -15,11 +15,14 @@ use clap::Args;
 use console::colors_enabled;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
-use crate::cli::{
-    constants::MAX_INDEXED_FILE_BYTES,
-    errors::{CliErrors, CliResult},
-    log::Logger,
-    workspace::{ExistingProject, Workspace},
+use crate::{
+    cli::{
+        constants::MAX_INDEXED_FILE_BYTES,
+        errors::{CliErrors, CliResult},
+        log::Logger,
+        workspace::{ExistingProject, Workspace},
+    },
+    graph::FileGraph,
 };
 
 mod discover;
@@ -32,9 +35,9 @@ mod tests;
 
 use discover::{Filter, index_path};
 use lock::IndexLock;
-use parser::{ParseOutcome, Parser, TextParser};
+use parser::{ParseOutcome, Parser, TextParser, python::PythonParser};
 use report::{Counts, IndexRun, ProjectReport, Status};
-use storage::{IndexedFile, MemgraphPlaceholder, ProjectChanges, Storage};
+use storage::{MemgraphPlaceholder, ProjectChanges, Storage};
 
 #[derive(Debug, Args)]
 pub struct IndexArgs {
@@ -67,7 +70,8 @@ pub fn run(args: &IndexArgs) -> CliResult<()> {
     let context = Context {
         workspace: &workspace,
         storage: &storage,
-        parser: &TextParser,
+        python_parser: &PythonParser,
+        typescript_parser: &TextParser,
         logger: &logger,
         interrupted: &INTERRUPTED,
         progress: true,
@@ -85,11 +89,12 @@ pub fn run(args: &IndexArgs) -> CliResult<()> {
     }
 }
 
-/// Everything a run works with, so tests can swap in their own storage and parser.
+/// Everything a run works with, so tests can swap in their own storage and parsers.
 pub(super) struct Context<'a> {
     pub workspace: &'a Workspace,
     pub storage: &'a dyn Storage,
-    pub parser: &'a dyn Parser,
+    pub python_parser: &'a dyn Parser,
+    pub typescript_parser: &'a dyn Parser,
     pub logger: &'a Logger,
     pub interrupted: &'a AtomicBool,
     /// Show progress bars and per-project lines on stderr.
@@ -206,6 +211,16 @@ fn index_project(
     let no_hashes = HashMap::new();
     let previous = if args.full { &no_hashes } else { &stored };
 
+    let files = ProjectFiles {
+        project: &project.id,
+        root: &project_root,
+        parser: match project.language.as_deref() {
+            Some("python") => context.python_parser,
+            _ => context.typescript_parser,
+        },
+        previous,
+        any_size: args.force,
+    };
     let progress = progress_bar(context.progress, &project.id, candidates.len());
     let mut changes = ProjectChanges::default();
     for relative in &candidates {
@@ -215,7 +230,7 @@ fn index_project(
             return report;
         }
         progress.set_message(index_path(relative));
-        let file = index_file(&project_root, relative, previous, args.force, context);
+        let file = index_file(&files, relative, context);
         match file {
             FileOutcome::Unchanged => report.counts.unchanged += 1,
             FileOutcome::Skipped => report.counts.skipped += 1,
@@ -256,20 +271,24 @@ enum FileOutcome {
     Unchanged,
     Skipped,
     Failed,
-    Parsed(IndexedFile),
-    Partial(IndexedFile),
+    Parsed(FileGraph),
+    Partial(FileGraph),
 }
 
-/// Reads and parses one file. `previous` holds the hashes of files that are skipped
-/// as unchanged when their content still matches. `any_size` lifts the size limit.
-fn index_file(
-    project_root: &Path,
-    relative: &Path,
-    previous: &HashMap<String, u64>,
+/// What reading and parsing a project's files needs.
+struct ProjectFiles<'a> {
+    project: &'a str,
+    root: &'a Path,
+    parser: &'a dyn Parser,
+    /// Hashes of files that are skipped as unchanged when their content still matches.
+    previous: &'a HashMap<String, u64>,
+    /// Lifts the size limit (`--force`).
     any_size: bool,
-    context: &Context<'_>,
-) -> FileOutcome {
-    let path = project_root.join(relative);
+}
+
+/// Reads and parses one file of a project.
+fn index_file(files: &ProjectFiles<'_>, relative: &Path, context: &Context<'_>) -> FileOutcome {
+    let path = files.root.join(relative);
     let key = index_path(relative);
     let log = |message: &str| {
         context
@@ -285,7 +304,7 @@ fn index_file(
         }
     };
     // Symbolic links are always skipped; large files only without `--force`.
-    let too_large = !any_size && metadata.len() > MAX_INDEXED_FILE_BYTES;
+    let too_large = !files.any_size && metadata.len() > MAX_INDEXED_FILE_BYTES;
     if metadata.file_type().is_symlink() || too_large {
         return FileOutcome::Skipped;
     }
@@ -298,15 +317,18 @@ fn index_file(
     };
 
     let hash = content_hash(&contents);
-    if previous.get(&key) == Some(&hash) {
+    if files.previous.get(&key) == Some(&hash) {
         return FileOutcome::Unchanged;
     }
-    let indexed = IndexedFile { path: key, hash };
-    match context.parser.parse(relative, &contents) {
-        ParseOutcome::Parsed => FileOutcome::Parsed(indexed),
-        ParseOutcome::Partial(details) => {
+    match files.parser.parse(files.project, &key, &contents) {
+        ParseOutcome::Parsed(mut graph) => {
+            graph.hash = hash;
+            FileOutcome::Parsed(graph)
+        }
+        ParseOutcome::Partial(mut graph, details) => {
             log(&format!("parsed in part: {details}"));
-            FileOutcome::Partial(indexed)
+            graph.hash = hash;
+            FileOutcome::Partial(graph)
         }
         ParseOutcome::Failed(details) => {
             log(&format!("could not be parsed: {details}"));

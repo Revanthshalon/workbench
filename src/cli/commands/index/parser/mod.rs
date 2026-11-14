@@ -1,39 +1,46 @@
-//! Turning a file's contents into graph nodes.
+//! Turning a file's contents into its code graph.
 //!
-//! Only a placeholder exists for now: it checks that a file is text. A real parser
-//! (tree-sitter for Python and TypeScript) implements the same trait.
+//! Python files are parsed with tree-sitter ([`python::PythonParser`]). Languages
+//! without a parser yet use [`TextParser`], which only checks that the file is text
+//! and returns a graph with just the file's module node.
 
-use std::path::Path;
+use crate::graph::FileGraph;
+
+/// The tree-sitter parser for Python.
+pub mod python;
 
 /// The result of parsing one file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseOutcome {
-    Parsed,
-    /// Parsed, but part of the file could not be understood. Not a failure.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "only a real parser reports partial files")
-    )]
-    Partial(String),
+    Parsed(FileGraph),
+    /// Parsed, but part of the file could not be understood. Not a failure: the
+    /// graph holds everything outside the broken parts, and the text says where they
+    /// are.
+    Partial(FileGraph, String),
     /// The file could not be parsed at all. Counts as a failure.
     Failed(String),
 }
 
+/// Parses one file of a project into its graph.
 pub trait Parser {
-    fn parse(&self, path: &Path, contents: &[u8]) -> ParseOutcome;
+    /// `relative_path` is relative to the project, with `/` separators; node ids
+    /// include `project`. The returned graph's hash is left for the caller to set.
+    fn parse(&self, project: &str, relative_path: &str, contents: &[u8]) -> ParseOutcome;
 }
 
-/// Placeholder parser: a file parses when it is valid UTF-8 text.
+/// For languages without a parser: a file parses when it is valid UTF-8 text.
 #[derive(Debug)]
 pub struct TextParser;
 
 impl Parser for TextParser {
-    fn parse(&self, _path: &Path, contents: &[u8]) -> ParseOutcome {
+    fn parse(&self, project: &str, relative_path: &str, contents: &[u8]) -> ParseOutcome {
         match std::str::from_utf8(contents) {
-            Ok(_) => ParseOutcome::Parsed,
+            Ok(text) => ParseOutcome::Parsed(FileGraph::module_only(
+                project,
+                relative_path,
+                text.lines().count(),
+            )),
             Err(error) => ParseOutcome::Failed(format!("not valid UTF-8 text: {error}")),
         }
     }
 }
-
-pub mod python;

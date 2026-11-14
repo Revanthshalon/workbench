@@ -1,5 +1,15 @@
-use super::parse_python;
+use super::{PythonParse, PythonParser, module_graph, parse_python_checked};
+use crate::cli::commands::index::parser::{ParseOutcome, Parser};
 use crate::graph::{FileGraph, NodeKind, ReferenceKind, Span};
+
+/// Parses a snippet; tree-sitter never gives up on these, but if it did the graph
+/// would hold only the module node.
+fn parse_python(project: &str, relative_path: &str, source: &str) -> PythonParse {
+    parse_python_checked(project, relative_path, source).unwrap_or_else(|| PythonParse {
+        graph: module_graph(project, relative_path, source),
+        error_lines: Vec::new(),
+    })
+}
 
 fn ids(graph: &FileGraph) -> Vec<(&str, NodeKind)> {
     graph
@@ -187,4 +197,37 @@ fn decorated_local_classes_resolve_as_bases() {
     let source = "@dataclass\nclass Base: ...\n\nclass C(Base): ...\n";
     let graph = parse_python("api", "m.py", source).graph;
     assert_eq!(targets(&graph), ["m.Base"]);
+}
+
+#[test]
+fn syntax_errors_give_a_partial_graph_of_the_rest() -> Result<(), Box<dyn std::error::Error>> {
+    let source = "def ok():\n    pass\n\ndef broken(:\n    pass\n\nclass Fine: ...\n";
+    let ParseOutcome::Partial(graph, details) =
+        PythonParser.parse("api", "m.py", source.as_bytes())
+    else {
+        return Err("expected a partial parse".into());
+    };
+    assert!(graph.nodes.iter().any(|node| node.id == "api:m.ok"));
+    assert!(graph.nodes.iter().any(|node| node.id == "api:m.Fine"));
+    assert!(
+        details.starts_with("syntax errors at lines 4"),
+        "unexpected details: {details}"
+    );
+    Ok(())
+}
+
+#[test]
+fn invalid_utf8_fails() {
+    assert!(matches!(
+        PythonParser.parse("api", "m.py", &[0xff, 0xfe]),
+        ParseOutcome::Failed(details) if details.starts_with("not valid UTF-8")
+    ));
+}
+
+#[test]
+fn clean_files_parse_fully() {
+    assert!(matches!(
+        PythonParser.parse("api", "m.py", b"x = 1\n"),
+        ParseOutcome::Parsed(_)
+    ));
 }
