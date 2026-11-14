@@ -73,8 +73,13 @@ by the store.
 - **Module name** comes from the file path relative to the project:
   - drop the extension; `pkg/__init__.py` is the module `pkg`;
   - path separators become dots: `billing/invoices.py` → `billing.invoices`;
-  - a leading `src/` directory is dropped (the common "src layout"):
-    `src/billing/invoices.py` → `billing.invoices`.
+  - a leading `src/` directory is dropped when it is only a folder (the "src
+    layout", no `src/__init__.py`): `src/billing/invoices.py` → `billing.invoices`.
+    When `src/` is itself a package (it has an `__init__.py` or `__init__.pyi`), it
+    is part of the name, matching how the code imports it:
+    `src/billing/invoices.py` → `src.billing.invoices`. *(Changed after the first
+    real run: a project importing `src.config` got ids without `src`, so imports
+    could never match their modules.)*
 - **Classes, functions, methods**: the module name, then the enclosing definitions,
   then the name: `billing.invoices.Invoice.total`.
 - **Nested functions** are kept and named through their parent:

@@ -392,3 +392,38 @@ fn python_projects_are_parsed_into_graphs() -> CliResult<()> {
 - [ ] **Step 6: Update `README.md`.** In the `workbench index` placeholder note, replace "Parsing currently only checks that a file is valid UTF-8 text" with "Python files are parsed into a code graph of modules, classes, functions and methods, with their imports and base classes; TypeScript files are only checked to be valid UTF-8 text. Nothing is stored yet." Add `src/graph/` to the source tree: `graph/  # language-neutral code graph`.
 - [ ] **Step 7: Run on a real project.** Index a scratch workspace whose Python project has a class, a relative import and a file with a syntax error. Expected: the summary shows `partial` = 1, the log names the error line, and the exit code is 0.
 - [ ] **Step 8: Commit.** `git add -A && git commit -m "Parse Python projects into code graphs during index"`. No attribution lines.
+
+---
+
+## After the plan
+
+Built after the four tasks, once the parser ran on a real project (`test-project`, project `demo`, 36 files):
+
+- **`workbench index --log-graph`** writes every parsed file's nodes, edges and references to `.workbench/logs/workbench-YYYY-MM-DD.log`, so a real run can be checked by reading the graph.
+- **`src` stays in module names when `src/` is a package.** The project imports its own code as `src.config`, `src.models…` because `src/` has an `__init__.py`. Dropping `src/` gave ids that no import could match. Now `index` checks for `src/__init__.py` (or `.pyi`) once per project, and parsers receive a `SourceFile { project, path, src_is_package }`. The spec records the changed rule.
+
+Result on the real run:
+- every `src.*` import matches a module id or a member of one;
+- 27 of 31 project-internal targets match a node id exactly.
+
+## Next steps
+
+Settle these before or alongside the link step and the Memgraph writer. They are ordered by how much they affect resolving references.
+
+1. **Module ids can collide within a project.** For example, `pkg/x.py` and `pkg/x/__init__.py` both become `pkg.x`; `x.py` and `src/x.py` (in a plain src layout) both become `x`. In TypeScript, `a.ts` and `a.js`, or `index.ts` and `index.tsx`, collide too. This is harmless while storage is a placeholder, but it must be settled before the Memgraph writer, since ids are the nodes' keys.
+2. **Module-level variables have no nodes.** On the real run, 4 of 31 project-internal targets are imports of variables, so there is nothing to link them to:
+   - `src.config.settings`
+   - `src.database.database.METADATA`
+   - `src.database.tables.item_tables.item_table`
+   - `src.database.tables.user_tables.user_table`
+
+   Decide whether variables (at least module-level assignments) become nodes, or whether such references resolve to the module.
+3. **Duplicate imports resolve to the wrong binding.** If a name is imported twice at module level, as in an `if` block and again later, a base class may resolve to the earlier import, not the last one in source order. The name map walks depth-first; it should follow source order.
+4. **Base classes defined inside functions aren't resolved.** The plan only covered module-level classes. The spec says a base defined in the same file resolves to that node's qualified name, e.g. `jobs.run.Inner`.
+5. **A base that names a class defined twice ignores its suffix.** For example, `class B: ...` twice, then `class C(B)`, gives `m.B` rather than `m.B#2`, the definition that is in effect.
+6. **Spaces inside a dotted base stay in the target.** `class C(a . b . X)` gives `a . b . X`. Build the dotted name from the identifiers instead of the raw text.
+
+Smaller cases the review set aside, kept as they are for now:
+- `from __future__ import` records no reference;
+- non-UTF-8 files that declare an encoding (`# coding: latin-1`) count as failed;
+- files with bare `\r` line endings get a one-line module span.
